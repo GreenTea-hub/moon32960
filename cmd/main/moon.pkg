@@ -1,0 +1,6 @@
+import {
+  "GreenTea-hub/moon32960" @moon32960,
+  "moonbitlang/core/env",
+}
+
+pkgtype(kind: "executable")
