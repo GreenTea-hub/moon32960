@@ -1,0 +1,5 @@
+_build/
+target/
+.venv/
+*.zip
+*.log
