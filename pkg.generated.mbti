@@ -1,0 +1,215 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "GreenTea-hub/moon32960"
+
+// Values
+pub const HEADER_LEN : Int32 = 24
+
+pub const START_BYTE : Byte = b'\x23'
+
+pub const VIN_LEN : Int32 = 17
+
+pub fn decode_frame(Bytes) -> Frame raise FrameError
+
+pub fn decode_vin(BytesView) -> String raise FrameError
+
+pub fn encode_frame(Frame) -> Bytes raise FrameError
+
+pub fn encode_vin(String) -> Bytes raise FrameError
+
+pub fn from_hex(String) -> Bytes raise FrameError
+
+pub fn i32_be(BytesView, Int32) -> Int32
+
+pub fn push_i32_be(Array[Byte], Int32) -> Unit
+
+pub fn push_u16_be(Array[Byte], Int32) -> Unit
+
+pub fn to_hex(BytesView) -> String
+
+pub fn u16_be(BytesView, Int32) -> Int32
+
+pub fn validate_vin(String) -> Unit raise FrameError
+
+// Errors
+pub(all) suberror FrameError {
+  InvalidStart(bytes~ : String)
+  TooShort(needed~ : Int32, actual~ : Int32)
+  BadCommand(byte~ : Int32)
+  BadResponseFlag(byte~ : Int32)
+  BadEncryption(byte~ : Int32)
+  BadVin(vin~ : String)
+  BadLength(expected~ : Int32, actual~ : Int32)
+  BadTime(bytes~ : String)
+  Payload(message~ : String)
+}
+
+// Types and methods
+pub(all) enum Command {
+  VehicleLogin
+  RealtimeReport
+  ResendReport
+  VehicleLogout
+  PlatformLogin
+  PlatformLogout
+  Heartbeat
+  TerminalTimeSync
+  PlatformDownlink
+  Unknown(Int32)
+}
+pub fn Command::from_byte(Byte) -> Self
+pub fn Command::name(Self) -> String
+pub fn Command::to_byte(Self) -> Byte
+
+pub(all) enum Encryption {
+  Plain
+  Rsa
+  Aes128
+  Abnormal
+  Invalid
+  Unknown(Int32)
+}
+pub fn Encryption::from_byte(Byte) -> Self
+pub fn Encryption::name(Self) -> String
+pub fn Encryption::to_byte(Self) -> Byte
+
+pub(all) struct Frame {
+  command : Command
+  response : ResponseFlag
+  vin : String
+  encryption : Encryption
+  payload : Bytes
+}
+pub fn Frame::new(command~ : Command, response~ : ResponseFlag, vin~ : String, encryption~ : Encryption, payload~ : Bytes) -> Self
+
+pub(all) struct Gateway {
+  sessions : Map[String, TerminalSession]
+  mut accepted : Int32
+  mut rejected : Int32
+}
+pub fn Gateway::new() -> Self
+pub fn Gateway::online_count(Self) -> Int32
+pub fn Gateway::route(Self, Frame) -> RouteOutcome raise FrameError
+pub fn Gateway::session(Self, String) -> TerminalSession?
+
+pub(all) enum InfoItem {
+  WholeVehicleItem(WholeVehicle)
+  LocationItem(Location)
+}
+pub fn InfoItem::info_type(Self) -> InfoType
+
+pub(all) enum InfoType {
+  WholeVehicle
+  DriveMotor
+  FuelCell
+  Engine
+  Location
+  Extreme
+  Alarm
+  StorageVoltage
+  StorageTemperature
+  StorageExtreme
+  Unknown(Int32)
+}
+pub fn InfoType::from_byte(Byte) -> Self
+pub fn InfoType::name(Self) -> String
+pub fn InfoType::to_byte(Self) -> Byte
+
+pub(all) struct Location {
+  status : Int32
+  longitude : Int32
+  latitude : Int32
+}
+pub fn Location::parse(BytesView) -> Self raise FrameError
+pub fn Location::to_bytes(Self) -> Bytes
+
+pub(all) struct LoginData {
+  time : Time
+  sequence : Int32
+}
+pub fn LoginData::new(time~ : Time, sequence~ : Int32) -> Self raise FrameError
+pub fn LoginData::parse(BytesView) -> Self raise FrameError
+pub fn LoginData::to_bytes(Self) -> Bytes
+
+pub(all) struct LogoutData {
+  time : Time
+  sequence : Int32
+}
+pub fn LogoutData::parse(BytesView) -> Self raise FrameError
+pub fn LogoutData::to_bytes(Self) -> Bytes
+
+pub(all) struct RealtimeReport {
+  time : Time
+  items : Array[InfoItem]
+}
+pub fn RealtimeReport::new(time~ : Time, items~ : Array[InfoItem]) -> Self
+pub fn RealtimeReport::parse(BytesView) -> Self raise FrameError
+pub fn RealtimeReport::to_bytes(Self) -> Bytes
+
+pub(all) enum ResponseFlag {
+  Success
+  Failure
+  VinDuplicate
+  CommandNotRecognized
+  Invalid
+  Unknown(Int32)
+}
+pub fn ResponseFlag::from_byte(Byte) -> Self
+pub fn ResponseFlag::to_byte(Self) -> Byte
+
+pub(all) enum RouteOutcome {
+  LoginAccepted
+  LoginResumed
+  ReportAccepted
+  HeartbeatAccepted
+  LogoutAccepted
+  Rejected(reason~ : String)
+}
+
+pub(all) enum SessionState {
+  Idle
+  Online
+  Closed
+}
+
+pub(all) struct TerminalSession {
+  vin : String
+  mut state : SessionState
+  mut sequence : Int32
+  mut report_count : Int32
+  mut resend_count : Int32
+  mut last_report : Time?
+}
+pub fn TerminalSession::heartbeat(Self) -> Unit raise FrameError
+pub fn TerminalSession::is_online(Self) -> Bool
+pub fn TerminalSession::login(Self, time~ : Time, sequence~ : Int32) -> Unit raise FrameError
+pub fn TerminalSession::logout(Self) -> Unit raise FrameError
+pub fn TerminalSession::new(String) -> Self raise FrameError
+pub fn TerminalSession::report(Self, at~ : Time, resend? : Bool) -> Unit raise FrameError
+
+pub(all) struct Time {
+  year : Int32
+  month : Int32
+  day : Int32
+  hour : Int32
+  minute : Int32
+  second : Int32
+}
+pub fn Time::from_bytes(BytesView) -> Self raise FrameError
+pub fn Time::new(year~ : Int32, month~ : Int32, day~ : Int32, hour~ : Int32, minute~ : Int32, second~ : Int32) -> Self raise FrameError
+pub fn Time::seconds_since(Self, Self) -> Int32
+pub fn Time::to_bytes(Self) -> Bytes
+
+pub(all) struct WholeVehicle {
+  status : Int32
+  charge_status : Int32
+  speed : Int32
+  soc : Int32
+  voltage : Int32
+  odometer : Int32
+}
+pub fn WholeVehicle::parse(BytesView) -> Self raise FrameError
+pub fn WholeVehicle::to_bytes(Self) -> Bytes
+
+// Type aliases
+
+// Traits
