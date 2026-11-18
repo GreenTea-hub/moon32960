@@ -2,31 +2,93 @@
 package "GreenTea-hub/moon32960"
 
 // Values
+pub const ALARM_MIN_LEN : Int32 = 10
+
+pub const DRIVE_MOTOR_LEN : Int32 = 12
+
+pub const ENGINE_LEN : Int32 = 5
+
+pub const EXTREME_LEN : Int32 = 14
+
+pub const FUEL_CELL_FIXED_LEN : Int32 = 18
+
+pub const FUEL_CELL_HEAD_LEN : Int32 = 8
+
 pub const HEADER_LEN : Int32 = 24
+
+pub const ICCID_LEN : Int32 = 20
+
+pub const LOCATION_LEN : Int32 = 9
+
+pub const MIN_FRAME_LEN : Int32 = 25
+
+pub const PLATFORM_LOGIN_LEN : Int32 = 41
+
+pub const RESEND_WINDOW_SECONDS : Int32 = 604800
 
 pub const START_BYTE : Byte = b'\x23'
 
+pub const VEHICLE_LOGIN_MIN_LEN : Int32 = 30
+
+pub const VEHICLE_LOGOUT_LEN : Int32 = 8
+
 pub const VIN_LEN : Int32 = 17
 
+pub const WHOLE_VEHICLE_LEN : Int32 = 20
+
+pub fn bcc(BytesView) -> Byte
+
+pub fn cell_voltage_v(Int32) -> Double?
+
+pub fn check_count(Int32, Int32, Int32, field~ : String) -> Unit raise FrameError
+
 pub fn decode_frame(Bytes) -> Frame raise FrameError
+
+pub fn decode_iccid(BytesView) -> String raise FrameError
+
+pub fn decode_item(BytesView, Int32, Int32) -> (ReportItem, Int32) raise FrameError
 
 pub fn decode_vin(BytesView) -> String raise FrameError
 
 pub fn encode_frame(Frame) -> Bytes raise FrameError
 
+pub fn encode_iccid(String) -> Bytes raise FrameError
+
+pub fn encode_item(ReportItem) -> Bytes
+
 pub fn encode_vin(String) -> Bytes raise FrameError
+
+pub fn ensure_at(BytesView, Int32, Int32, what~ : String) -> Unit raise FrameError
+
+pub fn expect_len(Int32, Int32, what~ : String) -> Unit raise FrameError
 
 pub fn from_hex(String) -> Bytes raise FrameError
 
-pub fn i32_be(BytesView, Int32) -> Int32
+pub fn heartbeat_payload() -> Bytes
 
-pub fn push_i32_be(Array[Byte], Int32) -> Unit
+pub fn is_ack(Frame) -> Bool
+
+pub fn probe_temperature(Int32) -> Int32?
 
 pub fn push_u16_be(Array[Byte], Int32) -> Unit
+
+pub fn push_u32_be(Array[Byte], Int32) -> Unit
+
+pub fn read_byte(BytesView, Int32, what~ : String) -> Int32 raise FrameError
+
+pub fn read_dword(BytesView, Int32, what~ : String) -> Int32 raise FrameError
+
+pub fn read_word(BytesView, Int32, what~ : String) -> Int32 raise FrameError
+
+pub fn response_frame(Frame, ResponseFlag) -> Frame
 
 pub fn to_hex(BytesView) -> String
 
 pub fn u16_be(BytesView, Int32) -> Int32
+
+pub fn u32_be(BytesView, Int32) -> Int32
+
+pub fn validate_iccid(String) -> Unit raise FrameError
 
 pub fn validate_vin(String) -> Unit raise FrameError
 
@@ -34,16 +96,41 @@ pub fn validate_vin(String) -> Unit raise FrameError
 pub(all) suberror FrameError {
   InvalidStart(bytes~ : String)
   TooShort(needed~ : Int32, actual~ : Int32)
-  BadCommand(byte~ : Int32)
   BadResponseFlag(byte~ : Int32)
   BadEncryption(byte~ : Int32)
+  BadChecksum(expected~ : Int32, actual~ : Int32)
   BadVin(vin~ : String)
   BadLength(expected~ : Int32, actual~ : Int32)
   BadTime(bytes~ : String)
+  BadIccid(iccid~ : String)
+  FieldOutOfRange(field~ : String, value~ : Int32, low~ : Int32, high~ : Int32)
+  UnsupportedInfoType(code~ : Int32)
   Payload(message~ : String)
 }
 
 // Types and methods
+pub(all) struct Alarm {
+  level_raw : Int32
+  general_flags_raw : Int32
+  storage_faults : Array[Int32]
+  motor_faults : Array[Int32]
+  engine_faults : Array[Int32]
+  other_faults : Array[Int32]
+  general_faults : Array[Int32]
+}
+pub fn Alarm::active_flags(Self) -> Array[Int32]
+pub fn Alarm::decode_at(BytesView, Int32, Int32) -> (Self, Int32) raise FrameError
+pub fn Alarm::has_flag(Self, Int32) -> Bool
+pub fn Alarm::level(Self) -> Int32?
+pub fn Alarm::to_bytes(Self) -> Bytes
+
+pub(all) struct AuditEntry {
+  vin : String
+  command : String
+  outcome : String
+  note : String
+}
+
 pub(all) enum Command {
   VehicleLogin
   RealtimeReport
@@ -60,17 +147,77 @@ pub fn Command::from_byte(Byte) -> Self
 pub fn Command::name(Self) -> String
 pub fn Command::to_byte(Self) -> Byte
 
+pub(all) struct DriveMotor {
+  sequence : Int32
+  status : Int32
+  controller_temp_raw : Int32
+  speed_raw : Int32
+  torque_raw : Int32
+  motor_temp_raw : Int32
+  input_voltage_raw : Int32
+  bus_current_raw : Int32
+}
+pub fn DriveMotor::decode(BytesView) -> Self raise FrameError
+pub fn DriveMotor::speed_rpm(Self) -> Int32?
+pub fn DriveMotor::status_name(Self) -> String
+pub fn DriveMotor::to_bytes(Self) -> Bytes
+pub fn DriveMotor::torque_nm(Self) -> Double?
+
+pub(all) struct DriveMotorData {
+  count_raw : Int32
+  motors : Array[DriveMotor]
+}
+pub fn DriveMotorData::decode_at(BytesView, Int32, Int32) -> (Self, Int32) raise FrameError
+pub fn DriveMotorData::to_bytes(Self) -> Bytes
+
 pub(all) enum Encryption {
   Plain
   Rsa
   Aes128
   Abnormal
-  Invalid
+  InvalidMode
   Unknown(Int32)
 }
 pub fn Encryption::from_byte(Byte) -> Self
 pub fn Encryption::name(Self) -> String
 pub fn Encryption::to_byte(Self) -> Byte
+
+pub(all) struct Engine {
+  status : Int32
+  crankshaft_speed_raw : Int32
+  fuel_consumption_raw : Int32
+}
+pub fn Engine::decode(BytesView) -> Self raise FrameError
+pub fn Engine::status_name(Self) -> String
+pub fn Engine::to_bytes(Self) -> Bytes
+
+pub(all) struct Extreme {
+  max_voltage_subsystem : Int32
+  max_voltage_cell : Int32
+  max_cell_voltage_raw : Int32
+  min_voltage_subsystem : Int32
+  min_voltage_cell : Int32
+  min_cell_voltage_raw : Int32
+  max_temp_subsystem : Int32
+  max_temp_probe : Int32
+  max_temp_raw : Int32
+  min_temp_subsystem : Int32
+  min_temp_probe : Int32
+  min_temp_raw : Int32
+}
+pub fn Extreme::decode(BytesView) -> Self raise FrameError
+pub fn Extreme::max_cell_voltage_v(Self) -> Double?
+pub fn Extreme::min_cell_voltage_v(Self) -> Double?
+pub fn Extreme::to_bytes(Self) -> Bytes
+
+pub(all) enum FieldState {
+  Valid
+  Abnormal
+  Invalid
+}
+pub fn FieldState::byte(Int32) -> Self
+pub fn FieldState::dword(Int32) -> Self
+pub fn FieldState::word(Int32) -> Self
 
 pub(all) struct Frame {
   command : Command
@@ -79,23 +226,42 @@ pub(all) struct Frame {
   encryption : Encryption
   payload : Bytes
 }
+pub fn Frame::hex(Self) -> String raise FrameError
 pub fn Frame::new(command~ : Command, response~ : ResponseFlag, vin~ : String, encryption~ : Encryption, payload~ : Bytes) -> Self
+
+pub(all) struct FuelCell {
+  voltage_raw : Int32
+  current_raw : Int32
+  hydrogen_consumption_raw : Int32
+  probe_total : Int32
+  probe_temps : Array[Int32]
+  max_hydrogen_temp_raw : Int32
+  max_hydrogen_temp_probe : Int32
+  max_hydrogen_concentration_raw : Int32
+  max_hydrogen_concentration_probe : Int32
+  max_hydrogen_pressure_raw : Int32
+  max_hydrogen_pressure_probe : Int32
+  dc_dc_status : Int32
+}
+pub fn FuelCell::decode_at(BytesView, Int32, Int32) -> (Self, Int32) raise FrameError
+pub fn FuelCell::to_bytes(Self) -> Bytes
 
 pub(all) struct Gateway {
   sessions : Map[String, TerminalSession]
   mut accepted : Int32
   mut rejected : Int32
+  audit : Array[AuditEntry]
 }
+pub fn Gateway::handle(Self, Frame, header? : ReportHeader) -> Handled raise FrameError
 pub fn Gateway::new() -> Self
 pub fn Gateway::online_count(Self) -> Int32
-pub fn Gateway::route(Self, Frame) -> RouteOutcome raise FrameError
 pub fn Gateway::session(Self, String) -> TerminalSession?
 
-pub(all) enum InfoItem {
-  WholeVehicleItem(WholeVehicle)
-  LocationItem(Location)
+pub(all) struct Handled {
+  outcome : RouteOutcome
+  response : Frame
+  note : String
 }
-pub fn InfoItem::info_type(Self) -> InfoType
 
 pub(all) enum InfoType {
   WholeVehicle
@@ -107,43 +273,39 @@ pub(all) enum InfoType {
   Alarm
   StorageVoltage
   StorageTemperature
-  StorageExtreme
   Unknown(Int32)
 }
 pub fn InfoType::from_byte(Byte) -> Self
 pub fn InfoType::name(Self) -> String
 pub fn InfoType::to_byte(Self) -> Byte
 
-pub(all) struct Location {
-  status : Int32
-  longitude : Int32
-  latitude : Int32
-}
-pub fn Location::parse(BytesView) -> Self raise FrameError
-pub fn Location::to_bytes(Self) -> Bytes
-
-pub(all) struct LoginData {
+pub(all) struct PlatformLogin {
   time : Time
   sequence : Int32
+  username : String
+  password : String
+  encryption_rule : Int32
 }
-pub fn LoginData::new(time~ : Time, sequence~ : Int32) -> Self raise FrameError
-pub fn LoginData::parse(BytesView) -> Self raise FrameError
-pub fn LoginData::to_bytes(Self) -> Bytes
+pub fn PlatformLogin::decode(BytesView) -> Self raise FrameError
+pub fn PlatformLogin::to_bytes(Self) -> Bytes raise FrameError
 
-pub(all) struct LogoutData {
-  time : Time
-  sequence : Int32
+pub(all) enum ReportHeader {
+  TimestampOnly
+  TimestampWithSerial
 }
-pub fn LogoutData::parse(BytesView) -> Self raise FrameError
-pub fn LogoutData::to_bytes(Self) -> Bytes
 
-pub(all) struct RealtimeReport {
-  time : Time
-  items : Array[InfoItem]
+pub(all) enum ReportItem {
+  Vehicle(WholeVehicle)
+  Motors(DriveMotorData)
+  FuelCell(FuelCell)
+  Engine(Engine)
+  Location(VehicleLocation)
+  Extreme(Extreme)
+  Alarm(Alarm)
+  StorageVoltage(StorageVoltage)
+  StorageTemperature(StorageTemperature)
 }
-pub fn RealtimeReport::new(time~ : Time, items~ : Array[InfoItem]) -> Self
-pub fn RealtimeReport::parse(BytesView) -> Self raise FrameError
-pub fn RealtimeReport::to_bytes(Self) -> Bytes
+pub fn ReportItem::info_type(Self) -> InfoType
 
 pub(all) enum ResponseFlag {
   Success
@@ -159,11 +321,16 @@ pub fn ResponseFlag::to_byte(Self) -> Byte
 pub(all) enum RouteOutcome {
   LoginAccepted
   LoginResumed
+  LoginDuplicate
   ReportAccepted
+  ResendAccepted
   HeartbeatAccepted
   LogoutAccepted
-  Rejected(reason~ : String)
+  TimeSyncAcknowledged
+  Rejected
+  Unsupported
 }
+pub fn RouteOutcome::name(Self) -> String
 
 pub(all) enum SessionState {
   Idle
@@ -171,17 +338,63 @@ pub(all) enum SessionState {
   Closed
 }
 
+pub(all) struct StorageTempGroup {
+  subsystem : Int32
+  probe_count : Int32
+  probe_temps_raw : Array[Int32]
+}
+
+pub(all) struct StorageTemperature {
+  groups : Array[StorageTempGroup]
+  max_temp_subsystem : Int32
+  max_temp_probe : Int32
+  max_temp_raw : Int32
+  min_temp_subsystem : Int32
+  min_temp_probe : Int32
+  min_temp_raw : Int32
+}
+pub fn StorageTemperature::decode_at(BytesView, Int32, Int32) -> (Self, Int32) raise FrameError
+pub fn StorageTemperature::to_bytes(Self) -> Bytes
+
+pub(all) struct StorageVoltage {
+  groups : Array[StorageVoltageGroup]
+}
+pub fn StorageVoltage::decode_at(BytesView, Int32, Int32) -> (Self, Int32) raise FrameError
+pub fn StorageVoltage::to_bytes(Self) -> Bytes
+
+pub(all) struct StorageVoltageGroup {
+  subsystem : Int32
+  cell_count : Int32
+  cell_voltages_raw : Array[Int32]
+}
+
+pub(all) struct Telemetry {
+  time : Time
+  serial : Int32?
+  items : Array[ReportItem]
+}
+pub fn Telemetry::decode(BytesView, header? : ReportHeader) -> Self raise FrameError
+pub fn Telemetry::find(Self, InfoType) -> ReportItem?
+pub fn Telemetry::has(Self, InfoType) -> Bool
+pub fn Telemetry::new(time~ : Time, items~ : Array[ReportItem]) -> Self
+pub fn Telemetry::to_bytes(Self, header? : ReportHeader) -> Bytes raise FrameError
+pub fn Telemetry::with_serial(Self, serial~ : Int32) -> Self
+
 pub(all) struct TerminalSession {
   vin : String
+  mut iccid : String
+  mut storage_codes : Array[String]
   mut state : SessionState
   mut sequence : Int32
   mut report_count : Int32
   mut resend_count : Int32
+  mut first_report : Time?
   mut last_report : Time?
+  mut alarm_level : Int32
 }
 pub fn TerminalSession::heartbeat(Self) -> Unit raise FrameError
 pub fn TerminalSession::is_online(Self) -> Bool
-pub fn TerminalSession::login(Self, time~ : Time, sequence~ : Int32) -> Unit raise FrameError
+pub fn TerminalSession::login(Self, VehicleLogin) -> Unit raise FrameError
 pub fn TerminalSession::logout(Self) -> Unit raise FrameError
 pub fn TerminalSession::new(String) -> Self raise FrameError
 pub fn TerminalSession::report(Self, at~ : Time, resend? : Bool) -> Unit raise FrameError
@@ -196,19 +409,66 @@ pub(all) struct Time {
 }
 pub fn Time::from_bytes(BytesView) -> Self raise FrameError
 pub fn Time::new(year~ : Int32, month~ : Int32, day~ : Int32, hour~ : Int32, minute~ : Int32, second~ : Int32) -> Self raise FrameError
-pub fn Time::seconds_since(Self, Self) -> Int32
 pub fn Time::to_bytes(Self) -> Bytes
+pub fn Time::to_display(Self) -> String
+
+pub(all) struct VehicleLocation {
+  position_status : Int32
+  longitude_raw : Int32
+  latitude_raw : Int32
+}
+pub fn VehicleLocation::decode(BytesView) -> Self raise FrameError
+pub fn VehicleLocation::is_fix_valid(Self) -> Bool
+pub fn VehicleLocation::is_south(Self) -> Bool
+pub fn VehicleLocation::is_west(Self) -> Bool
+pub fn VehicleLocation::latitude(Self) -> Double?
+pub fn VehicleLocation::longitude(Self) -> Double?
+pub fn VehicleLocation::to_bytes(Self) -> Bytes
+
+pub(all) struct VehicleLogin {
+  time : Time
+  sequence : Int32
+  iccid : String
+  storage_codes : Array[String]
+  code_len : Int32
+}
+pub fn VehicleLogin::decode(BytesView) -> Self raise FrameError
+pub fn VehicleLogin::decode_at(BytesView, Int32) -> (Self, Int32) raise FrameError
+pub fn VehicleLogin::new(time~ : Time, sequence~ : Int32, iccid~ : String, storage_codes~ : Array[String], code_len~ : Int32) -> Self raise FrameError
+pub fn VehicleLogin::to_bytes(Self) -> Bytes raise FrameError
+
+pub(all) struct VehicleLogout {
+  time : Time
+  sequence : Int32
+}
+pub fn VehicleLogout::decode(BytesView) -> Self raise FrameError
+pub fn VehicleLogout::to_bytes(Self) -> Bytes
 
 pub(all) struct WholeVehicle {
-  status : Int32
+  vehicle_status : Int32
   charge_status : Int32
-  speed : Int32
+  operation_mode : Int32
+  speed_raw : Int32
+  odometer_raw : Int32
+  total_voltage_raw : Int32
+  total_current_raw : Int32
   soc : Int32
-  voltage : Int32
-  odometer : Int32
+  dc_dc_status : Int32
+  gear : Int32
+  insulation_raw : Int32
+  accelerator_raw : Int32
+  brake_status : Int32
 }
-pub fn WholeVehicle::parse(BytesView) -> Self raise FrameError
+pub fn WholeVehicle::charge_status_name(Self) -> String
+pub fn WholeVehicle::decode(BytesView) -> Self raise FrameError
+pub fn WholeVehicle::insulation_kohm(Self) -> Int32?
+pub fn WholeVehicle::odometer_km(Self) -> Double?
+pub fn WholeVehicle::operation_mode_name(Self) -> String
+pub fn WholeVehicle::speed_kmh(Self) -> Double?
 pub fn WholeVehicle::to_bytes(Self) -> Bytes
+pub fn WholeVehicle::total_current_a(Self) -> Double?
+pub fn WholeVehicle::total_voltage_v(Self) -> Double?
+pub fn WholeVehicle::vehicle_status_name(Self) -> String
 
 // Type aliases
 
