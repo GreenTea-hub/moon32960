@@ -1,19 +1,16 @@
 // command.mbt
 ///|
-/// GB/T 32960 command identifier (the third byte of the frame header).
-///
-/// `Unknown` keeps forward compatibility: a future revision can add commands
-/// without making the decoder reject the frame outright.
+/// 命令标识（命令单元），GB/T 32960.3-2016 表 3。
 pub(all) enum Command {
-  VehicleLogin
-  RealtimeReport
-  ResendReport
-  VehicleLogout
-  PlatformLogin
-  PlatformLogout
-  Heartbeat
-  TerminalTimeSync
-  PlatformDownlink
+  VehicleLogin // 0x01 车辆登入（上行）
+  RealtimeReport // 0x02 实时信息上报（上行）
+  ResendReport // 0x03 补发信息上报（上行）
+  VehicleLogout // 0x04 车辆登出（上行）
+  PlatformLogin // 0x05 平台登入
+  PlatformLogout // 0x06 平台登出
+  Heartbeat // 0x07 心跳
+  TerminalTimeSync // 0x08 终端校时
+  PlatformDownlink // 0x80 平台下行
   Unknown(Int32)
 }
 
@@ -66,13 +63,13 @@ pub fn Command::name(self : Command) -> String {
 }
 
 ///|
-/// Response flag carried by every frame (fourth header byte).
+/// 应答标志，GB/T 32960.3-2016 表 3。
 pub(all) enum ResponseFlag {
-  Success
-  Failure
-  VinDuplicate
-  CommandNotRecognized
-  Invalid
+  Success // 0x01 成功
+  Failure // 0x02 失败
+  VinDuplicate // 0x03 VIN 重复
+  CommandNotRecognized // 0xFE 命令不识别
+  Invalid // 0xFF 无效
   Unknown(Int32)
 }
 
@@ -101,16 +98,13 @@ pub fn ResponseFlag::from_byte(byte : Byte) -> ResponseFlag {
 }
 
 ///|
-/// Data encryption mode byte.
-///
-/// The encoder and decoder only carry the value through; encryption itself is
-/// a later milestone and is called out in `docs/PROTOCOL.md`.
+/// 数据加密方式，GB/T 32960.3-2016。
 pub(all) enum Encryption {
-  Plain
-  Rsa
-  Aes128
-  Abnormal
-  Invalid
+  Plain // 0x01 不加密
+  Rsa // 0x02 RSA
+  Aes128 // 0x03 AES128
+  Abnormal // 0xFE 异常
+  InvalidMode // 0xFF 无效
   Unknown(Int32)
 }
 
@@ -121,7 +115,7 @@ pub fn Encryption::to_byte(self : Encryption) -> Byte {
     Rsa => b'\x02'
     Aes128 => b'\x03'
     Abnormal => b'\xfe'
-    Invalid => b'\xff'
+    InvalidMode => b'\xff'
     Unknown(n) => n.to_byte()
   }
 }
@@ -133,7 +127,7 @@ pub fn Encryption::from_byte(byte : Byte) -> Encryption {
     0x02 => Rsa
     0x03 => Aes128
     0xfe => Abnormal
-    0xff => Invalid
+    0xff => InvalidMode
     n => Unknown(n)
   }
 }
@@ -145,7 +139,71 @@ pub fn Encryption::name(self : Encryption) -> String {
     Rsa => "rsa"
     Aes128 => "aes128"
     Abnormal => "abnormal"
-    Invalid => "invalid"
+    InvalidMode => "invalid"
+    Unknown(_) => "unknown"
+  }
+}
+
+///|
+/// 信息类型标志，GB/T 32960.3-2016 表 7。九类全覆盖，未列取值保留前向兼容分支。
+pub(all) enum InfoType {
+  WholeVehicle // 0x01 整车数据
+  DriveMotor // 0x02 驱动电机数据
+  FuelCell // 0x03 燃料电池数据
+  Engine // 0x04 发动机数据
+  Location // 0x05 车辆位置数据
+  Extreme // 0x06 极值数据
+  Alarm // 0x07 报警数据
+  StorageVoltage // 0x08 可充电储能装置电压数据
+  StorageTemperature // 0x09 可充电储能装置温度数据
+  Unknown(Int32)
+}
+
+
+///|
+pub fn InfoType::to_byte(self : InfoType) -> Byte {
+  match self {
+    WholeVehicle => b'\x01'
+    DriveMotor => b'\x02'
+    FuelCell => b'\x03'
+    Engine => b'\x04'
+    Location => b'\x05'
+    Extreme => b'\x06'
+    Alarm => b'\x07'
+    StorageVoltage => b'\x08'
+    StorageTemperature => b'\x09'
+    Unknown(n) => n.to_byte()
+  }
+}
+
+///|
+pub fn InfoType::from_byte(byte : Byte) -> InfoType {
+  match byte.to_int() {
+    0x01 => WholeVehicle
+    0x02 => DriveMotor
+    0x03 => FuelCell
+    0x04 => Engine
+    0x05 => Location
+    0x06 => Extreme
+    0x07 => Alarm
+    0x08 => StorageVoltage
+    0x09 => StorageTemperature
+    n => Unknown(n)
+  }
+}
+
+///|
+pub fn InfoType::name(self : InfoType) -> String {
+  match self {
+    WholeVehicle => "whole-vehicle"
+    DriveMotor => "drive-motor"
+    FuelCell => "fuel-cell"
+    Engine => "engine"
+    Location => "location"
+    Extreme => "extreme"
+    Alarm => "alarm"
+    StorageVoltage => "storage-voltage"
+    StorageTemperature => "storage-temperature"
     Unknown(_) => "unknown"
   }
 }
