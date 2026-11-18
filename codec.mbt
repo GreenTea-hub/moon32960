@@ -1,11 +1,16 @@
 // codec.mbt
 ///|
-/// Shared byte helpers used by the frame and payload codecs.
-///
-/// Reads go through `BytesView` so callers can slice without copying, and
-/// every helper returns an explicit result instead of panicking on short input.
+/// 大端（网络字节序）读取：GB/T 32960.3 的字（WORD）与双字（DWORD）均以大端传递。
 pub fn u16_be(bytes : BytesView, offset : Int32) -> Int32 {
   bytes[offset].to_int() * 256 + bytes[offset + 1].to_int()
+}
+
+///|
+pub fn u32_be(bytes : BytesView, offset : Int32) -> Int32 {
+  bytes[offset].to_int() * 16777216 +
+  bytes[offset + 1].to_int() * 65536 +
+  bytes[offset + 2].to_int() * 256 +
+  bytes[offset + 3].to_int()
 }
 
 ///|
@@ -15,15 +20,23 @@ pub fn push_u16_be(out : Array[Byte], value : Int32) -> Unit {
 }
 
 ///|
-/// VIN carried by GB/T 32960 is exactly 17 ASCII bytes.
+pub fn push_u32_be(out : Array[Byte], value : Int32) -> Unit {
+  out.push((value / 16777216).to_byte())
+  out.push(((value / 65536) % 256).to_byte())
+  out.push(((value / 256) % 256).to_byte())
+  out.push((value % 256).to_byte())
+}
+
+///|
+/// 车辆识别码 VIN，17 位 ASCII。GB/T 32960.3 中长度固定。
 pub const VIN_LEN : Int32 = 17
 
 ///|
-/// Validate that a string is a 17-character VIN.
-///
-/// The check is deliberately strict: length, ASCII-only and the characters the
-/// VIN alphabet excludes (`I`, `O`, `Q`) are all rejected, because a platform
-/// that stores a malformed VIN cannot route reports to the right vehicle.
+/// SIM 卡 ICCID，20 位 ASCII，登入数据单元必备字段。
+pub const ICCID_LEN : Int32 = 20
+
+///|
+/// 校验 VIN：17 位、ASCII、且不含 VIN 字母表排除的 I/O/Q。
 pub fn validate_vin(vin : String) -> Unit raise FrameError {
   if vin.length() != VIN_LEN {
     raise BadVin(vin~)
@@ -59,12 +72,38 @@ pub fn decode_vin(bytes : BytesView) -> String raise FrameError {
 }
 
 ///|
-/// Calendar time carried by 32960 payloads: six bytes, one per field.
+/// 校验 ICCID：20 位且全为数字。终端应从 SIM 卡读取，不是人工填写。
+pub fn validate_iccid(iccid : String) -> Unit raise FrameError {
+  if iccid.length() != ICCID_LEN {
+    raise BadIccid(iccid~)
+  }
+  for ch in iccid {
+    let code = ch.to_int()
+    if code < 48 || code > 57 {
+      raise BadIccid(iccid~)
+    }
+  }
+}
+
+///|
+pub fn encode_iccid(iccid : String) -> Bytes raise FrameError {
+  validate_iccid(iccid)
+  @utf8.encode(iccid)
+}
+
+///|
+pub fn decode_iccid(bytes : BytesView) -> String raise FrameError {
+  let text = @utf8.decode(bytes) catch {
+    _ => raise BadIccid(iccid="<not valid utf8>")
+  }
+  validate_iccid(text)
+  text
+}
+
+///|
+/// 时间：6 字节，依次为年、月、日、时、分、秒，均按北京时间。
 ///
-/// Year is stored as an offset from 2000 (``0`` meaning 2000) so that a
-/// single byte covers 2000..2099. Field order and encoding must be re-checked
-/// against the standard text before claiming conformance (see
-/// `docs/PROTOCOL.md`).
+/// 年字段有效值 0~99，表示 2000~2099 年；本结构保存四位年份，编码时减 2000。
 pub(all) struct Time {
   year : Int32
   month : Int32
@@ -95,22 +134,10 @@ pub fn Time::new(
     !in_range(minute, 0, 59) ||
     !in_range(second, 0, 59) {
     raise BadTime(
-      bytes=render(year, month, day, hour, minute, second),
+      bytes="\{year}-\{month}-\{day} \{hour}:\{minute}:\{second}",
     )
   }
   { year, month, day, hour, minute, second }
-}
-
-///|
-fn render(
-  year : Int32,
-  month : Int32,
-  day : Int32,
-  hour : Int32,
-  minute : Int32,
-  second : Int32,
-) -> String {
-  "\{year}-\{month}-\{day} \{hour}:\{minute}:\{second}"
 }
 
 ///|
@@ -141,14 +168,18 @@ pub fn Time::from_bytes(bytes : BytesView) -> Time raise FrameError {
 }
 
 ///|
-/// Interval between two timestamps in whole seconds, assuming the same month.
-/// Sufficient for heartbeat freshness and re-send windows; a full calendar
-/// difference is a later milestone.
-pub fn Time::seconds_since(self : Time, earlier : Time) -> Int32 {
-  let a = self.hour * 3600 + self.minute * 60 + self.second
-  let b = earlier.hour * 3600 + earlier.minute * 60 + earlier.second
-  let days = self.day - earlier.day
-  days * 86400 + a - b
+/// 显示为 `YYYY-MM-DD HH:MM:SS`，便于 CLI 与日志。
+pub fn Time::to_display(self : Time) -> String {
+  let pad = fn(value : Int32) -> String {
+    if value < 10 {
+      "0\{value}"
+    } else {
+      "\{value}"
+    }
+  }
+  let ymd = "\{self.year}-\{pad(self.month)}-\{pad(self.day)}"
+  let hms = "\{pad(self.hour)}:\{pad(self.minute)}:\{pad(self.second)}"
+  "\{ymd} \{hms}"
 }
 
 ///|
@@ -192,4 +223,14 @@ fn hex_digit(ch : Char) -> Int32 raise FrameError {
   } else {
     raise Payload(message="invalid hex digit: \{ch}")
   }
+}
+
+///|
+/// BCC 异或校验：校验范围为命令单元首字节至校验码前一字节。
+pub fn bcc(bytes : BytesView) -> Byte {
+  let mut acc = 0
+  for byte in bytes {
+    acc = acc ^ byte.to_int()
+  }
+  acc.to_byte()
 }
