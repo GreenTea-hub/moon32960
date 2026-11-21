@@ -16,5 +16,6 @@ pub(all) suberror FrameError {
   BadIccid(iccid~ : String)
   FieldOutOfRange(field~ : String, value~ : Int32, low~ : Int32, high~ : Int32)
   UnsupportedInfoType(code~ : Int32)
+  CryptoUnavailable(mode~ : String, message~ : String)
   Payload(message~ : String)
 }
