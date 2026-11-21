@@ -68,7 +68,7 @@ pub(all) enum ResponseFlag {
   Success // 0x01 成功
   Failure // 0x02 失败
   VinDuplicate // 0x03 VIN 重复
-  CommandNotRecognized // 0xFE 命令不识别
+  Command // 0xFE 命令包（主动发起方标记）
   Invalid // 0xFF 无效
   Unknown(Int32)
 }
@@ -79,7 +79,7 @@ pub fn ResponseFlag::to_byte(self : ResponseFlag) -> Byte {
     Success => b'\x01'
     Failure => b'\x02'
     VinDuplicate => b'\x03'
-    CommandNotRecognized => b'\xfe'
+    Command => b'\xfe'
     Invalid => b'\xff'
     Unknown(n) => n.to_byte()
   }
@@ -91,7 +91,7 @@ pub fn ResponseFlag::from_byte(byte : Byte) -> ResponseFlag {
     0x01 => Success
     0x02 => Failure
     0x03 => VinDuplicate
-    0xfe => CommandNotRecognized
+    0xfe => Command
     0xff => Invalid
     n => Unknown(n)
   }
