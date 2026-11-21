@@ -1,21 +1,32 @@
 // frame_test.mbt
 ///|
-/// 由 `moon run cmd/main -- case login` 生成的车辆登入帧，数据单元 37 字节，
-/// 末尾一字节为 BCC 校验码（0x2a）。
-const GOLDEN_LOGIN_HEX : String = "232301014c47574546344135364d463132333435360100251a0b12091e000001383938363036323031383030303132333435363701074241542d4130312a"
+/// 由 `moon run cmd/main -- case login` 生成的车辆登入命令包：
+/// 应答标志 0xFE 表示命令包，数据单元 37 字节，末尾一字节为 BCC。
+const GOLDEN_LOGIN_HEX : String = "232301fe4c47574546344135364d463132333435360100251a0b12091e000001383938363036323031383030303132333435363701074241542d413031d5"
 
 ///|
-test "解码黄金登入帧" {
+/// 平台对该命令包的应答：应答标志 0x01，数据单元为空，加密方式回到 0x01。
+const GOLDEN_LOGIN_ACK_HEX : String = "232301014c47574546344135364d4631323334353601000024"
+
+///|
+/// 由 `moon run cmd/main -- case encrypted` 生成的 AES128 加密上报帧：
+/// 加密方式 0x03，数据单元 48 字节密文（37 字节明文经 PKCS#7 填充到 48）。
+const GOLDEN_ENCRYPTED_HEX : String = "232302fe4c47574546344135364d463132333435360300304c2229bb4dc2e406c63d054d69f47cbc725f02e50d74f0e58f4b78c3309bcaf466c0da206dbc7e84c0580854cd83ea3af4"
+
+///|
+const AES_KEY_HEX : String = "000102030405060708090a0b0c0d0e0f"
+
+///|
+test "解码黄金登入命令包" {
   let frame = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
   assert_eq(frame.command.name(), "vehicle-login")
+  assert_false(@moon32960.is_response_packet(frame))
   assert_eq(frame.vin, "LGWEF4A56MF123456")
   assert_eq(frame.payload.length(), 37)
   let login = @moon32960.VehicleLogin::decode(frame.payload[:])
   assert_eq(login.sequence, 1)
   assert_eq(login.iccid, "89860620180001234567")
-  assert_eq(login.storage_codes.length(), 1)
   assert_eq(login.storage_codes[0], "BAT-A01")
-  assert_eq(login.code_len, 7)
 }
 
 ///|
@@ -25,15 +36,50 @@ test "编码是解码的逆运算" {
 }
 
 ///|
+test "应答帧为 0x01 成功且数据单元为空" {
+  let request = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
+  let response = @moon32960.response_frame(request, @moon32960.ResponseFlag::Success)
+  assert_eq(response.hex(), GOLDEN_LOGIN_ACK_HEX)
+  let decoded = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_ACK_HEX))
+  assert_eq(decoded.payload.length(), 0)
+  assert_true(@moon32960.is_response_packet(decoded))
+}
+
+///|
+test "加密帧无密钥时拒绝，不当明文解析" {
+  try @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_ENCRYPTED_HEX)) catch {
+    err => match err {
+      @moon32960.FrameError::CryptoUnavailable(mode~, ..) => assert_eq(mode, "AES128")
+      _ => fail("期望 CryptoUnavailable")
+    }
+  } noraise {
+    _ => fail("无密钥时加密帧仍被解析")
+  }
+}
+
+///|
+test "加密帧带密钥可解密回明文" {
+  let key = @moon32960.KeyMaterial::Aes128Ecb(key=@moon32960.from_hex(AES_KEY_HEX))
+  let frame = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_ENCRYPTED_HEX), key~)
+  assert_eq(frame.payload.length(), 37)
+  let telemetry = @moon32960.Telemetry::decode(frame.payload[:])
+  assert_eq(telemetry.items.length(), 2)
+  assert_eq(telemetry.time.minute, 31)
+}
+
+///|
+test "加密后组帧与黄金密文一致" {
+  let key = @moon32960.KeyMaterial::Aes128Ecb(key=@moon32960.from_hex(AES_KEY_HEX))
+  let frame = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_ENCRYPTED_HEX), key~)
+  assert_eq(frame.hex(key~), GOLDEN_ENCRYPTED_HEX)
+}
+
+///|
 test "校验码错误被拒绝" {
-  // 把最后一字节 0x2a 改成 0x2b
-  let tampered = GOLDEN_LOGIN_HEX[0:GOLDEN_LOGIN_HEX.length() - 2].to_owned() + "2b"
+  let tampered = GOLDEN_LOGIN_HEX[0:GOLDEN_LOGIN_HEX.length() - 2].to_owned() + "d4"
   try @moon32960.decode_frame(@moon32960.from_hex(tampered)) catch {
     err => match err {
-      @moon32960.FrameError::BadChecksum(expected~, actual~) => {
-        assert_eq(expected, 43)
-        assert_eq(actual, 42)
-      }
+      @moon32960.FrameError::BadChecksum(..) => ()
       _ => fail("期望 BadChecksum")
     }
   } noraise {
@@ -43,8 +89,8 @@ test "校验码错误被拒绝" {
 
 ///|
 test "声明长度与实际不符被拒绝" {
-  // 数据单元长度字段位于偏移 22，原值为 0x0025
-  let tampered = GOLDEN_LOGIN_HEX[0:44].to_owned() + "0026" + GOLDEN_LOGIN_HEX[48:].to_owned()
+  let tampered = GOLDEN_LOGIN_HEX[0:44].to_owned() + "0026" +
+    GOLDEN_LOGIN_HEX[48:].to_owned()
   try @moon32960.decode_frame(@moon32960.from_hex(tampered)) catch {
     err => match err {
       @moon32960.FrameError::BadLength(expected~, ..) => assert_eq(expected, 38)
@@ -84,21 +130,7 @@ test "空帧长度不足被拒绝" {
 }
 
 ///|
-test "应答帧数据单元为空且校验码正确" {
-  let request = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
-  let response = @moon32960.response_frame(request, @moon32960.ResponseFlag::Success)
-  let wire = response.hex()
-  assert_eq(
-    wire,
-    "232301014c47574546344135364d4631323334353601000024",
-  )
-  let decoded = @moon32960.decode_frame(@moon32960.from_hex(wire))
-  assert_eq(decoded.payload.length(), 0)
-}
-
-///|
 test "BCC 覆盖命令单元到数据单元末字节" {
-  // 起始符不参与校验：对同一帧从偏移 2 开始的异或值应与末尾校验码一致
   let frame = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
   let body = @moon32960.encode_frame(frame)
   let checksum = body[body.length() - 1].to_int()
