@@ -2,16 +2,17 @@
 ///|
 /// 平台对一跳上行帧的处理结论。
 pub(all) enum RouteOutcome {
-  LoginAccepted
-  LoginResumed
-  LoginDuplicate
-  ReportAccepted
-  ResendAccepted
-  HeartbeatAccepted
-  LogoutAccepted
-  TimeSyncAcknowledged
-  Rejected
-  Unsupported
+  LoginAccepted // 登入正确，应答 0x01
+  LoginResumed // 会话已关闭后重登，应答 0x01
+  LoginDuplicate // VIN 已在线，应答 0x03
+  LoginIgnored // 登入校验未通过，按标准忽略且不应答
+  ReportAccepted // 实时上报校验正确，按标准不应答
+  ResendAccepted // 补发校验正确，按标准不应答
+  HeartbeatAccepted // 心跳，应答 0x01
+  LogoutAccepted // 登出，应答 0x01
+  TimeSyncAcknowledged // 校时应答 0x01
+  Rejected // 拒绝，应答 0x02
+  Undecodable // 连报头都无法解析，无从应答
 }
 
 ///|
@@ -20,26 +21,27 @@ pub fn RouteOutcome::name(self : RouteOutcome) -> String {
     LoginAccepted => "login-accepted"
     LoginResumed => "login-resumed"
     LoginDuplicate => "login-duplicate"
+    LoginIgnored => "login-ignored"
     ReportAccepted => "report-accepted"
     ResendAccepted => "resend-accepted"
     HeartbeatAccepted => "heartbeat-accepted"
     LogoutAccepted => "logout-accepted"
     TimeSyncAcknowledged => "time-sync-acknowledged"
     Rejected => "rejected"
-    Unsupported => "unsupported"
+    Undecodable => "undecodable"
   }
 }
 
 ///|
-/// 一次处理的结果：结论、要回给终端的应答帧、以及给运维看的一句话说明。
+/// 处理结果。`response` 为 `None` 表示按标准不应答——实时与补发在上报正确时属于这种情形。
 pub(all) struct Handled {
   outcome : RouteOutcome
-  response : Frame
+  response : Frame?
   note : String
 }
 
 ///|
-/// 审计条目：平台的每次接收都留一条，便于事后核对。
+/// 审计条目：平台每次接收都留一条。
 pub(all) struct AuditEntry {
   vin : String
   command : String
@@ -62,130 +64,154 @@ pub fn Gateway::new() -> Gateway {
 }
 
 ///|
-fn audit_and_answer(
+fn audit_and_pack(
   g : Gateway,
-  frame : Frame,
+  vin : String,
+  command : Command,
   outcome : RouteOutcome,
+  response : Frame?,
   note~ : String,
-  response~ : Frame,
 ) -> Handled {
   g.audit.push({
-    vin: frame.vin,
-    command: frame.command.name(),
+    vin,
+    command: command.name(),
     outcome: outcome.name(),
     note,
   })
   match outcome {
-    Rejected | Unsupported => g.rejected = g.rejected + 1
+    Rejected | Undecodable => g.rejected = g.rejected + 1
     _ => g.accepted = g.accepted + 1
   }
   { outcome, response, note }
 }
 
 ///|
-/// 处理一跳上行帧：解析数据单元、更新会话、生成应答。
+/// 处理一跳已解帧的上行帧。
 ///
-/// 解析失败同样返回应答帧（应答标志取「失败」），保证终端能收到反馈而不是静默超时。
-pub fn Gateway::handle(
-  self : Gateway,
-  frame : Frame,
-  header~ : ReportHeader = TimestampOnly,
-) -> Handled raise FrameError {
+/// 应答语义按 GB/T 32960.3 附录 B：登入必须应答；实时与补发上报校验正确时不应答，
+/// 校验错误时回错误应答；心跳与登出应答。
+pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
   match frame.command {
     VehicleLogin => {
-      let login = VehicleLogin::decode(frame.payload[:])
+      let login = VehicleLogin::decode(frame.payload[:]) catch {
+        _ => {
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            LoginIgnored,
+            None,
+            note="登入数据单元校验未通过，按标准忽略所接收数据且不应答",
+          )
+        }
+      }
       match self.sessions.get(frame.vin) {
         Some(session) => {
           if session.is_online() {
-            let response = response_frame(frame, ResponseFlag::VinDuplicate)
-            audit_and_answer(
+            let response = response_frame(frame, VinDuplicate)
+            audit_and_pack(
               self,
-              frame,
+              frame.vin,
+              frame.command,
               LoginDuplicate,
-              note="VIN 已处于在线状态，按重复登入拒绝",
-              response~,
+              Some(response),
+              note="VIN 已处于在线会话，应答 0x03 VIN 重复",
             )
           } else {
             session.login(login)
-            let response = response_frame(frame, ResponseFlag::Success)
-            audit_and_answer(
+            let response = response_frame(frame, Success)
+            audit_and_pack(
               self,
-              frame,
+              frame.vin,
+              frame.command,
               LoginResumed,
-              note="会话已关闭后重新登入，复用原会话",
-              response~,
+              Some(response),
+              note="会话曾关闭，重新登入成功，应答 0x01",
             )
           }
         }
         None => {
-          let session = TerminalSession::new(frame.vin)
-          session.login(login)
-          self.sessions.set(frame.vin, session)
-          let response = response_frame(frame, ResponseFlag::Success)
-          audit_and_answer(
-            self,
-            frame,
-            LoginAccepted,
-            note="新建会话，ICCID 共 \{login.iccid.length()} 位",
-            response~,
-          )
-        }
-      }
-    }
-    RealtimeReport => {
-      let telemetry = Telemetry::decode(frame.payload[:], header~)
-      match self.sessions.get(frame.vin) {
-        Some(session) => {
-          session.report(at=telemetry.time)
-          let response = response_frame(frame, ResponseFlag::Success)
-          audit_and_answer(
-            self,
-            frame,
-            ReportAccepted,
-            note="接收 \{telemetry.items.length()} 类信息体",
-            response~,
-          )
-        }
-        None => {
-          let response = response_frame(frame, ResponseFlag::Failure)
-          audit_and_answer(
-            self,
-            frame,
-            Rejected,
-            note="未登入的 VIN 上报，按失败应答",
-            response~,
-          )
-        }
-      }
-    }
-    ResendReport => {
-      let telemetry = Telemetry::decode(frame.payload[:], header~)
-      match self.sessions.get(frame.vin) {
-        Some(session) => {
-          session.report(at=telemetry.time, resend=true) catch {
+          let session = TerminalSession::new(frame.vin) catch {
             _ => {
-              let response = response_frame(frame, ResponseFlag::Failure)
-              let note = "补发被拒：\{telemetry.time.to_display()}"
-              return audit_and_answer(self, frame, Rejected, note~, response~)
+              return audit_and_pack(
+                self,
+                frame.vin,
+                frame.command,
+                LoginIgnored,
+                None,
+                note="VIN 不合法，按标准忽略且不应答",
+              )
             }
           }
-          let response = response_frame(frame, ResponseFlag::Success)
-          audit_and_answer(
+          session.login(login)
+          self.sessions.set(frame.vin, session)
+          let response = response_frame(frame, Success)
+          audit_and_pack(
             self,
-            frame,
-            ResendAccepted,
-            note="补发 \{telemetry.items.length()} 类信息体",
-            response~,
+            frame.vin,
+            frame.command,
+            LoginAccepted,
+            Some(response),
+            note="新建会话，应答 0x01；终端收到应答后才完成本次登入",
+          )
+        }
+      }
+    }
+    RealtimeReport | ResendReport => {
+      let resend = match frame.command {
+        ResendReport => true
+        _ => false
+      }
+      let telemetry = Telemetry::decode(frame.payload[:]) catch {
+        _ => {
+          let response = response_frame(frame, Failure)
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="上报数据单元校验失败，应答 0x02；终端应间隔 1min 重发，失败 3 次后停止",
+          )
+        }
+      }
+      match self.sessions.get(frame.vin) {
+        Some(session) => {
+          session.report(at=telemetry.time, resend~) catch {
+            _ => {
+              let response = response_frame(frame, Failure)
+              return audit_and_pack(
+                self,
+                frame.vin,
+                frame.command,
+                Rejected,
+                Some(response),
+                note="上报时间超出补发窗口，应答 0x02",
+              )
+            }
+          }
+          let outcome = if resend {
+            ResendAccepted
+          } else {
+            ReportAccepted
+          }
+          audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            outcome,
+            None,
+            note="校验正确，按标准不做应答",
           )
         }
         None => {
-          let response = response_frame(frame, ResponseFlag::Failure)
-          audit_and_answer(
+          audit_and_pack(
             self,
-            frame,
+            frame.vin,
+            frame.command,
             Rejected,
-            note="未登入的 VIN 补发，按失败应答",
-            response~,
+            None,
+            note="未见该 VIN 的有效登入，丢弃且不应答",
           )
         }
       }
@@ -195,54 +221,158 @@ pub fn Gateway::handle(
         Some(session) => {
           session.heartbeat() catch {
             _ => {
-              let response = response_frame(frame, ResponseFlag::Failure)
-              return audit_and_answer(self, frame, Rejected, note="心跳时会话不在线", response~)
+              return audit_and_pack(
+                self,
+                frame.vin,
+                frame.command,
+                Rejected,
+                None,
+                note="心跳时会话不在线，丢弃且不应答",
+              )
             }
           }
-          let response = response_frame(frame, ResponseFlag::Success)
-          audit_and_answer(self, frame, HeartbeatAccepted, note="心跳正常", response~)
+          let response = response_frame(frame, Success)
+          audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            HeartbeatAccepted,
+            Some(response),
+            note="心跳应答 0x01",
+          )
         }
         None => {
-          let response = response_frame(frame, ResponseFlag::Failure)
-          audit_and_answer(self, frame, Rejected, note="未知 VIN 心跳", response~)
+          audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            None,
+            note="未知 VIN 心跳，丢弃且不应答",
+          )
         }
       }
     }
     VehicleLogout => {
-      let logout = VehicleLogout::decode(frame.payload[:])
+      let logout = VehicleLogout::decode(frame.payload[:]) catch {
+        _ => {
+          let response = response_frame(frame, Failure)
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="登出数据单元解析失败，应答 0x02",
+          )
+        }
+      }
       match self.sessions.get(frame.vin) {
         Some(session) => {
           session.logout() catch {
             _ => {
-              let response = response_frame(frame, ResponseFlag::Failure)
-              return audit_and_answer(self, frame, Rejected, note="登出时会话不在线", response~)
+              let response = response_frame(frame, Failure)
+              return audit_and_pack(
+                self,
+                frame.vin,
+                frame.command,
+                Rejected,
+                Some(response),
+                note="登出时会话不在线，应答 0x02",
+              )
             }
           }
-          let response = response_frame(frame, ResponseFlag::Success)
-          let note = "登出流水号 \{logout.sequence}，会话已关闭"
-          audit_and_answer(self, frame, LogoutAccepted, note~, response~)
+          let response = response_frame(frame, Success)
+          let note = "登出流水号 \{logout.sequence}，会话关闭，应答 0x01"
+          audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            LogoutAccepted,
+            Some(response),
+            note~,
+          )
         }
         None => {
-          let response = response_frame(frame, ResponseFlag::Failure)
-          audit_and_answer(self, frame, Rejected, note="未知 VIN 登出", response~)
+          let response = response_frame(frame, Failure)
+          audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="未知 VIN 登出，应答 0x02",
+          )
         }
       }
     }
     TerminalTimeSync => {
-      let response = response_frame(frame, ResponseFlag::Success)
-      audit_and_answer(self, frame, TimeSyncAcknowledged, note="校时应答", response~)
+      let response = response_frame(frame, Success)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        TimeSyncAcknowledged,
+        Some(response),
+        note="校时应答 0x01",
+      )
     }
     _ => {
-      let response = response_frame(frame, ResponseFlag::CommandNotRecognized)
-      audit_and_answer(
+      let response = response_frame(frame, Failure)
+      audit_and_pack(
         self,
-        frame,
-        Unsupported,
-        note="平台不处理的命令：\{frame.command.name()}",
-        response~,
+        frame.vin,
+        frame.command,
+        Rejected,
+        Some(response),
+        note="平台不处理该命令，应答 0x02",
       )
     }
   }
+}
+
+///|
+/// 处理一段原始字节：先取报头，再按密钥解密与校验，最后交给业务规则。
+///
+/// 解密或校验失败时，只要报头可读就回 0x02，让终端知道需要重发；报头都读不出则无从应答。
+pub fn Gateway::handle_bytes(
+  self : Gateway,
+  data : Bytes,
+  key~ : KeyMaterial = NoKey,
+) -> Handled {
+  let header = peek_header(data) catch {
+    _ => {
+      return audit_and_pack(
+        self,
+        "",
+        Unknown(0),
+        Undecodable,
+        None,
+        note="报头不可解析，无法确定 VIN 与命令，不应答",
+      )
+    }
+  }
+  let frame = decode_frame(data, key~) catch {
+    _ => {
+      let placeholder = Frame::new(
+        command=header.command,
+        response=header.response,
+        vin=header.vin,
+        encryption=header.encryption,
+        payload=Bytes::new(0),
+      )
+      let response = response_frame(placeholder, Failure)
+      return audit_and_pack(
+        self,
+        header.vin,
+        header.command,
+        Rejected,
+        Some(response),
+        note="校验码或解密失败，应答 0x02",
+      )
+    }
+  }
+  self.handle(frame)
 }
 
 ///|

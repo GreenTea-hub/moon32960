@@ -14,7 +14,7 @@ pub const RESEND_WINDOW_SECONDS : Int32 = 7 * 24 * 3600
 ///|
 /// 一个终端的平台侧会话。
 ///
-/// 登入时记录 ICCID 与可充电储能子系统编码，用于后续身份核对；上报按实时/补发分别计数，
+/// 登入时记录 ICCID 与可充电储能子系统编码，用于后续身份核对；上报按实时与补发分别计数，
 /// 并保留首次与最近一次上报时间，供补发窗口判断。
 pub(all) struct TerminalSession {
   vin : String
@@ -26,7 +26,6 @@ pub(all) struct TerminalSession {
   mut resend_count : Int32
   mut first_report : Time?
   mut last_report : Time?
-  mut alarm_level : Int32
 }
 
 ///|
@@ -42,15 +41,12 @@ pub fn TerminalSession::new(vin : String) -> TerminalSession raise FrameError {
     resend_count: 0,
     first_report: None,
     last_report: None,
-    alarm_level: 0,
   }
 }
 
 ///|
-pub fn TerminalSession::login(
-  self : TerminalSession,
-  login : VehicleLogin,
-) -> Unit raise FrameError {
+/// 记录登入信息。字段已在 `VehicleLogin` 解码阶段校验，这里只做状态切换。
+pub fn TerminalSession::login(self : TerminalSession, login : VehicleLogin) -> Unit {
   self.state = SessionState::Online
   self.sequence = login.sequence
   self.iccid = login.iccid
