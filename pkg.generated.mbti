@@ -36,13 +36,29 @@ pub const VIN_LEN : Int32 = 17
 
 pub const WHOLE_VEHICLE_LEN : Int32 = 20
 
+pub fn aes128_cbc_decrypt(Bytes, Bytes, Bytes) -> Bytes raise FrameError
+
+pub fn aes128_cbc_encrypt(Bytes, Bytes, Bytes) -> Bytes raise FrameError
+
+pub fn aes128_decrypt_block(BytesView, Array[Int32]) -> Bytes raise FrameError
+
+pub fn aes128_ecb_decrypt(Bytes, Bytes) -> Bytes raise FrameError
+
+pub fn aes128_ecb_encrypt(Bytes, Bytes) -> Bytes raise FrameError
+
+pub fn aes128_encrypt_block(BytesView, Array[Int32]) -> Bytes raise FrameError
+
+pub fn aes128_expand_key(Bytes) -> Array[Int32] raise FrameError
+
 pub fn bcc(BytesView) -> Byte
 
 pub fn cell_voltage_v(Int32) -> Double?
 
 pub fn check_count(Int32, Int32, Int32, field~ : String) -> Unit raise FrameError
 
-pub fn decode_frame(Bytes) -> Frame raise FrameError
+pub fn command_frame(Frame) -> Frame
+
+pub fn decode_frame(Bytes, key? : KeyMaterial) -> Frame raise FrameError
 
 pub fn decode_iccid(BytesView) -> String raise FrameError
 
@@ -50,13 +66,17 @@ pub fn decode_item(BytesView, Int32, Int32) -> (ReportItem, Int32) raise FrameEr
 
 pub fn decode_vin(BytesView) -> String raise FrameError
 
-pub fn encode_frame(Frame) -> Bytes raise FrameError
+pub fn decrypt_payload(Encryption, Bytes, key~ : KeyMaterial) -> Bytes raise FrameError
+
+pub fn encode_frame(Frame, key? : KeyMaterial) -> Bytes raise FrameError
 
 pub fn encode_iccid(String) -> Bytes raise FrameError
 
 pub fn encode_item(ReportItem) -> Bytes
 
 pub fn encode_vin(String) -> Bytes raise FrameError
+
+pub fn encrypt_payload(Encryption, Bytes, key~ : KeyMaterial) -> Bytes raise FrameError
 
 pub fn ensure_at(BytesView, Int32, Int32, what~ : String) -> Unit raise FrameError
 
@@ -66,7 +86,13 @@ pub fn from_hex(String) -> Bytes raise FrameError
 
 pub fn heartbeat_payload() -> Bytes
 
-pub fn is_ack(Frame) -> Bool
+pub fn is_response_packet(Frame) -> Bool
+
+pub fn peek_header(Bytes) -> FrameHeader raise FrameError
+
+pub fn pkcs7_pad(Bytes) -> Bytes
+
+pub fn pkcs7_unpad(Bytes) -> Bytes raise FrameError
 
 pub fn probe_temperature(Int32) -> Int32?
 
@@ -81,6 +107,8 @@ pub fn read_dword(BytesView, Int32, what~ : String) -> Int32 raise FrameError
 pub fn read_word(BytesView, Int32, what~ : String) -> Int32 raise FrameError
 
 pub fn response_frame(Frame, ResponseFlag) -> Frame
+
+pub fn response_frame_with_time(Frame, ResponseFlag, time~ : Time) -> Frame
 
 pub fn to_hex(BytesView) -> String
 
@@ -105,6 +133,7 @@ pub(all) suberror FrameError {
   BadIccid(iccid~ : String)
   FieldOutOfRange(field~ : String, value~ : Int32, low~ : Int32, high~ : Int32)
   UnsupportedInfoType(code~ : Int32)
+  CryptoUnavailable(mode~ : String, message~ : String)
   Payload(message~ : String)
 }
 
@@ -226,8 +255,16 @@ pub(all) struct Frame {
   encryption : Encryption
   payload : Bytes
 }
-pub fn Frame::hex(Self) -> String raise FrameError
+pub fn Frame::hex(Self, key? : KeyMaterial) -> String raise FrameError
 pub fn Frame::new(command~ : Command, response~ : ResponseFlag, vin~ : String, encryption~ : Encryption, payload~ : Bytes) -> Self
+
+pub(all) struct FrameHeader {
+  command : Command
+  response : ResponseFlag
+  vin : String
+  encryption : Encryption
+  payload_len : Int32
+}
 
 pub(all) struct FuelCell {
   voltage_raw : Int32
@@ -252,14 +289,15 @@ pub(all) struct Gateway {
   mut rejected : Int32
   audit : Array[AuditEntry]
 }
-pub fn Gateway::handle(Self, Frame, header? : ReportHeader) -> Handled raise FrameError
+pub fn Gateway::handle(Self, Frame) -> Handled
+pub fn Gateway::handle_bytes(Self, Bytes, key? : KeyMaterial) -> Handled
 pub fn Gateway::new() -> Self
 pub fn Gateway::online_count(Self) -> Int32
 pub fn Gateway::session(Self, String) -> TerminalSession?
 
 pub(all) struct Handled {
   outcome : RouteOutcome
-  response : Frame
+  response : Frame?
   note : String
 }
 
@@ -278,6 +316,13 @@ pub(all) enum InfoType {
 pub fn InfoType::from_byte(Byte) -> Self
 pub fn InfoType::name(Self) -> String
 pub fn InfoType::to_byte(Self) -> Byte
+
+pub(all) enum KeyMaterial {
+  NoKey
+  Aes128Ecb(key~ : Bytes)
+  Aes128Cbc(key~ : Bytes, iv~ : Bytes)
+}
+pub fn KeyMaterial::describe(Self) -> String
 
 pub(all) struct PlatformLogin {
   time : Time
@@ -311,7 +356,7 @@ pub(all) enum ResponseFlag {
   Success
   Failure
   VinDuplicate
-  CommandNotRecognized
+  Command
   Invalid
   Unknown(Int32)
 }
@@ -322,13 +367,14 @@ pub(all) enum RouteOutcome {
   LoginAccepted
   LoginResumed
   LoginDuplicate
+  LoginIgnored
   ReportAccepted
   ResendAccepted
   HeartbeatAccepted
   LogoutAccepted
   TimeSyncAcknowledged
   Rejected
-  Unsupported
+  Undecodable
 }
 pub fn RouteOutcome::name(Self) -> String
 
@@ -390,11 +436,10 @@ pub(all) struct TerminalSession {
   mut resend_count : Int32
   mut first_report : Time?
   mut last_report : Time?
-  mut alarm_level : Int32
 }
 pub fn TerminalSession::heartbeat(Self) -> Unit raise FrameError
 pub fn TerminalSession::is_online(Self) -> Bool
-pub fn TerminalSession::login(Self, VehicleLogin) -> Unit raise FrameError
+pub fn TerminalSession::login(Self, VehicleLogin) -> Unit
 pub fn TerminalSession::logout(Self) -> Unit raise FrameError
 pub fn TerminalSession::new(String) -> Self raise FrameError
 pub fn TerminalSession::report(Self, at~ : Time, resend? : Bool) -> Unit raise FrameError
