@@ -52,6 +52,8 @@ pub fn aes128_expand_key(Bytes) -> Array[Int32] raise FrameError
 
 pub fn bcc(BytesView) -> Byte
 
+pub fn build_response(Frame, ResponseFlag, shape? : ResponseShape, answer_time? : Time?, key? : KeyMaterial) -> Frame raise FrameError
+
 pub fn cell_voltage_v(Int32) -> Double?
 
 pub fn check_count(Int32, Int32, Int32, field~ : String) -> Unit raise FrameError
@@ -107,8 +109,6 @@ pub fn read_dword(BytesView, Int32, what~ : String) -> Int32 raise FrameError
 pub fn read_word(BytesView, Int32, what~ : String) -> Int32 raise FrameError
 
 pub fn response_frame(Frame, ResponseFlag) -> Frame
-
-pub fn response_frame_with_time(Frame, ResponseFlag, time~ : Time) -> Frame
 
 pub fn to_hex(BytesView) -> String
 
@@ -173,6 +173,10 @@ pub(all) enum Command {
   Unknown(Int32)
 }
 pub fn Command::from_byte(Byte) -> Self
+pub fn Command::is_downlink(Self) -> Bool
+pub fn Command::is_platform_uplink(Self) -> Bool
+pub fn Command::is_terminal_uplink(Self) -> Bool
+pub fn Command::is_uplink(Self) -> Bool
 pub fn Command::name(Self) -> String
 pub fn Command::to_byte(Self) -> Byte
 
@@ -289,8 +293,8 @@ pub(all) struct Gateway {
   mut rejected : Int32
   audit : Array[AuditEntry]
 }
-pub fn Gateway::handle(Self, Frame) -> Handled
-pub fn Gateway::handle_bytes(Self, Bytes, key? : KeyMaterial) -> Handled
+pub fn Gateway::handle(Self, Frame, scope? : Scope, shape? : ResponseShape, answer_time? : Time?, profile? : ResponseProfile) -> Handled
+pub fn Gateway::handle_bytes(Self, Bytes, scope? : Scope, shape? : ResponseShape, answer_time? : Time?, key? : KeyMaterial) -> Handled
 pub fn Gateway::new() -> Self
 pub fn Gateway::online_count(Self) -> Int32
 pub fn Gateway::session(Self, String) -> TerminalSession?
@@ -363,6 +367,18 @@ pub(all) enum ResponseFlag {
 pub fn ResponseFlag::from_byte(Byte) -> Self
 pub fn ResponseFlag::to_byte(Self) -> Byte
 
+pub(all) enum ResponseProfile {
+  Gb2016
+  Extended
+}
+
+pub(all) enum ResponseShape {
+  KeepRequestPayload
+  TimeOnly
+  EmptyPayload
+}
+pub fn ResponseShape::name(Self) -> String
+
 pub(all) enum RouteOutcome {
   LoginAccepted
   LoginResumed
@@ -373,10 +389,19 @@ pub(all) enum RouteOutcome {
   HeartbeatAccepted
   LogoutAccepted
   TimeSyncAcknowledged
+  PlatformLoginAccepted
+  PlatformLogoutAccepted
   Rejected
+  ConflictingDirection
   Undecodable
 }
 pub fn RouteOutcome::name(Self) -> String
+
+pub(all) enum Scope {
+  TerminalToPlatform
+  PlatformToPlatform
+}
+pub fn Scope::name(Self) -> String
 
 pub(all) enum SessionState {
   Idle

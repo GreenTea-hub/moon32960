@@ -137,17 +137,18 @@ fn describe_frame(frame : @moon32960.Frame) -> Unit {
 }
 
 ///|
-fn print_handled(handled : @moon32960.Handled) -> Unit raise {
+fn print_handled(handled : @moon32960.Handled, key~ : @moon32960.KeyMaterial = @moon32960.KeyMaterial::NoKey) -> Unit raise {
   println("  平台结论    : \{handled.outcome.name()}")
   println("  说明        : \{handled.note}")
   match handled.response {
     Some(response) => {
-      println("  应答帧      : \{response.hex()}")
+      println("  应答帧      : \{response.hex(key~)}")
       println(
         "  应答标志    : \{@moon32960.ResponseFlag::to_byte(response.response).to_hex()}",
       )
+      println("  应答数据单元: \{response.payload.length()} 字节")
     }
-    None => println("  应答帧      : 无（按标准校验正确时不做应答）")
+    None => println("  应答帧      : 无（本次处理不产生应答）")
   }
 }
 
@@ -348,7 +349,7 @@ fn case_encrypted() -> Unit raise {
   println("     BCC 在密文之上计算，与标准「先加密再校验」一致")
   section("③ 平台收到字节流")
   let handled = gateway.handle_bytes(@moon32960.from_hex(wire), key~)
-  print_handled(handled)
+  print_handled(handled, key~)
   let decoded = @moon32960.decode_frame(@moon32960.from_hex(wire), key~)
   section("④ 解密后的字段")
   println("  数据单元    : \{decoded.payload.length()} 字节（PKCS#7 填充已去除）")
@@ -443,6 +444,54 @@ fn case_resend() -> Unit raise {
 }
 
 ///|
+fn case_platform() -> Unit raise {
+  section("案例五 · 车端与平台间的应答规则对比")
+  println("  同一份实时上报数据，两类场景的应答规则不同：")
+  println("  · 车端（附录 B.2.1）：校验正确时平台不做应答")
+  println("  · 平台间（正文 5.2.2）：校验正确时服务端平台必须正确应答")
+  let payload = sample_telemetry(time=sample_time(hour=9, minute=31)).to_bytes()
+  let terminal = @moon32960.Frame::new(
+    command=@moon32960.Command::RealtimeReport,
+    response=@moon32960.Command,
+    vin="LGWEF4A56MF123456",
+    encryption=@moon32960.Encryption::Plain,
+    payload~,
+  )
+  let platform_frame = @moon32960.Frame::new(
+    command=@moon32960.Command::RealtimeReport,
+    response=@moon32960.Command,
+    vin="PLATFRM0000000001",
+    encryption=@moon32960.Encryption::Plain,
+    payload~,
+  )
+  section("① 车端：终端上报")
+  let terminal_gateway = @moon32960.Gateway::new()
+  let _ = terminal_gateway.handle(login_frame("LGWEF4A56MF123456"))
+  let terminal_handled = terminal_gateway.handle(terminal)
+  print_handled(terminal_handled)
+  section("② 平台间：客户端平台上报同一份数据")
+  let platform_gateway = @moon32960.Gateway::new()
+  let platform_handled = platform_gateway.handle(
+    platform_frame,
+    scope=@moon32960.Scope::PlatformToPlatform,
+  )
+  print_handled(platform_handled)
+  section("③ 方向检查")
+  let wrong = @moon32960.Gateway::new()
+  let time_sync = @moon32960.Frame::new(
+    command=@moon32960.Command::TerminalTimeSync,
+    response=@moon32960.Command,
+    vin="LGWEF4A56MF123456",
+    encryption=@moon32960.Encryption::Plain,
+    payload=Bytes::new(0),
+  )
+  let why = wrong.handle(time_sync)
+  print_handled(why)
+  println("  · 0x08 是平台下行命令，平台侧收到即方向不符")
+  println("  · 平台间报文的第 4~20 字节按 17 位标识处理，本实现沿用 VIN 字母表校验")
+}
+
+///|
 fn parse_key(text : String) -> @moon32960.KeyMaterial raise {
   let raw = @moon32960.from_hex(text)
   if raw.length() != 16 {
@@ -494,6 +543,7 @@ fn main raise {
     ["case", "encrypted"] => case_encrypted()
     ["case", "report"] => case_report()
     ["case", "resend"] => case_resend()
+    ["case", "platform"] => case_platform()
     _ => usage()
   }
 }
