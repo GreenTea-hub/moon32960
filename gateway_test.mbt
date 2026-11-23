@@ -86,13 +86,79 @@ test "登入成功必须应答 0x01" {
 }
 
 ///|
-test "重复登入应答 0x03" {
+test "重复登入在 2016 口径应答 0x02" {
   let gateway = @moon32960.Gateway::new()
   let vin = "LGWEF4A56MF123456"
   let _ = gateway.handle(login_frame(vin))
   let handled = gateway.handle(login_frame(vin, sequence=2))
   assert_eq(handled.outcome.name(), "login-duplicate")
+  // 2016 版表 4 只有 0x01/0x02/0xFE，VIN 重复只能落在 0x02
+  assert_true(flag_of(handled) is Some(@moon32960.ResponseFlag::Failure))
+}
+
+///|
+test "重复登入在扩展口径应答 0x03" {
+  let gateway = @moon32960.Gateway::new()
+  let vin = "LGWEF4A56MF123456"
+  let profile = @moon32960.ResponseProfile::Extended
+  let _ = gateway.handle(login_frame(vin), profile~)
+  let handled = gateway.handle(login_frame(vin, sequence=2), profile~)
   assert_true(flag_of(handled) is Some(@moon32960.ResponseFlag::VinDuplicate))
+}
+
+///|
+test "应答保留请求数据单元（附录B）" {
+  let gateway = @moon32960.Gateway::new()
+  let frame = login_frame("LGWEF4A56MF123456")
+  let handled = gateway.handle(frame)
+  match handled.response {
+    Some(response) => {
+      assert_eq(response.payload.length(), frame.payload.length())
+      assert_eq(@moon32960.to_hex(response.payload), @moon32960.to_hex(frame.payload))
+    }
+    None => fail("登入必须应答")
+  }
+}
+
+///|
+test "平台间实时上报校验正确也必须应答" {
+  let gateway = @moon32960.Gateway::new()
+  let frame = @moon32960.Frame::new(
+    command=@moon32960.Command::RealtimeReport,
+    response=@moon32960.Command,
+    vin="PLATFORM-A",
+    encryption=@moon32960.Encryption::Plain,
+    payload=telemetry_payload(minute=31),
+  )
+  let handled = gateway.handle(frame, scope=@moon32960.Scope::PlatformToPlatform)
+  assert_eq(handled.outcome.name(), "report-accepted")
+  // 与车端相反：平台间 5.2.2 要求正确时也要应答
+  assert_true(flag_of(handled) is Some(@moon32960.ResponseFlag::Success))
+}
+
+///|
+test "下行命令在平台侧被判定方向不符" {
+  let gateway = @moon32960.Gateway::new()
+  let frame = @moon32960.Frame::new(
+    command=@moon32960.Command::TerminalTimeSync,
+    response=@moon32960.Command,
+    vin="LGWEF4A56MF123456",
+    encryption=@moon32960.Encryption::Plain,
+    payload=Bytes::new(0),
+  )
+  let handled = gateway.handle(frame)
+  assert_eq(handled.outcome.name(), "conflicting-direction")
+  assert_true(flag_of(handled) is Some(@moon32960.ResponseFlag::Failure))
+}
+
+///|
+test "车端命令在平台间场景被拒绝" {
+  let gateway = @moon32960.Gateway::new()
+  let handled = gateway.handle(
+    login_frame("LGWEF4A56MF123456"),
+    scope=@moon32960.Scope::PlatformToPlatform,
+  )
+  assert_eq(handled.outcome.name(), "conflicting-direction")
 }
 
 ///|
@@ -228,7 +294,8 @@ test "加密上报带密钥可解，无密钥应答 0x02" {
   assert_true(decoded.response is None)
   let blind = gateway.handle_bytes(@moon32960.from_hex(wire))
   assert_eq(blind.outcome.name(), "rejected")
-  assert_true(flag_of(blind) is Some(@moon32960.ResponseFlag::Failure))
+  // 缺密钥时既解不开也无法按同加密方式应答，只能记录、不应答
+  assert_true(blind.response is None)
 }
 
 ///|

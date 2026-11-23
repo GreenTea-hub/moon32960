@@ -36,13 +36,65 @@ test "编码是解码的逆运算" {
 }
 
 ///|
-test "应答帧为 0x01 成功且数据单元为空" {
+test "附录B应答保留请求数据单元，只改应答标志" {
   let request = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
-  let response = @moon32960.response_frame(request, @moon32960.ResponseFlag::Success)
-  assert_eq(response.hex(), GOLDEN_LOGIN_ACK_HEX)
-  let decoded = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_ACK_HEX))
-  assert_eq(decoded.payload.length(), 0)
+  let response = @moon32960.build_response(
+    request,
+    @moon32960.ResponseFlag::Success,
+  )
+  // B.3.3.2：其余报文内容与主动发送报文一致
+  assert_eq(response.payload.length(), request.payload.length())
+  assert_eq(@moon32960.to_hex(response.payload), @moon32960.to_hex(request.payload))
+  let decoded = @moon32960.decode_frame(@moon32960.from_hex(response.hex()))
   assert_true(@moon32960.is_response_packet(decoded))
+  match decoded.response {
+    @moon32960.ResponseFlag::Success => ()
+    _ => fail("应答标志应为 0x01")
+  }
+}
+
+///|
+test "应答报文时间替换数据单元前 6 字节" {
+  let request = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
+  let answer_time = try! @moon32960.Time::new(
+    year=2026, month=11, day=18, hour=9, minute=32, second=0,
+  )
+  let response = @moon32960.build_response(
+    request,
+    @moon32960.ResponseFlag::Success,
+    answer_time=Some(answer_time),
+  )
+  assert_eq(response.payload.length(), 37)
+  assert_eq(@moon32960.to_hex(response.payload[0:6]), "1a0b12092000")
+  // 其余字节保持不变
+  assert_eq(
+    @moon32960.to_hex(response.payload[6:37]),
+    @moon32960.to_hex(request.payload[6:37]),
+  )
+}
+
+///|
+test "TimeOnly 形态只保留 6 字节报文时间" {
+  let request = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
+  let response = @moon32960.build_response(
+    request,
+    @moon32960.ResponseFlag::VinDuplicate,
+    shape=@moon32960.TimeOnly,
+  )
+  assert_eq(response.payload.length(), 6)
+  assert_eq(@moon32960.to_hex(response.payload), "1a0b12091e00")
+}
+
+///|
+test "EmptyPayload 形态数据单元为空" {
+  let request = @moon32960.decode_frame(@moon32960.from_hex(GOLDEN_LOGIN_HEX))
+  let response = @moon32960.build_response(
+    request,
+    @moon32960.ResponseFlag::Success,
+    shape=@moon32960.EmptyPayload,
+  )
+  assert_eq(response.payload.length(), 0)
+  assert_eq(response.hex(), GOLDEN_LOGIN_ACK_HEX)
 }
 
 ///|
