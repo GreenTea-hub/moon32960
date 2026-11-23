@@ -1,18 +1,29 @@
 // gateway.mbt
 ///|
+/// 应答标志取值口径。GB/T 32960.3-2016 表 4 只给出 0x01 成功、0x02 失败、0xFE 命令；
+/// 0x03 VIN 重复、0xFF 无效来自地方标准与 2025 版，默认不启用。
+pub(all) enum ResponseProfile {
+  Gb2016
+  Extended
+}
+
+///|
 /// 平台对一跳上行帧的处理结论。
 pub(all) enum RouteOutcome {
-  LoginAccepted // 登入正确，应答 0x01
-  LoginResumed // 会话已关闭后重登，应答 0x01
-  LoginDuplicate // VIN 已在线，应答 0x03
-  LoginIgnored // 登入校验未通过，按标准忽略且不应答
-  ReportAccepted // 实时上报校验正确，按标准不应答
-  ResendAccepted // 补发校验正确，按标准不应答
-  HeartbeatAccepted // 心跳，应答 0x01
-  LogoutAccepted // 登出，应答 0x01
-  TimeSyncAcknowledged // 校时应答 0x01
-  Rejected // 拒绝，应答 0x02
-  Undecodable // 连报头都无法解析，无从应答
+  LoginAccepted
+  LoginResumed
+  LoginDuplicate
+  LoginIgnored
+  ReportAccepted
+  ResendAccepted
+  HeartbeatAccepted
+  LogoutAccepted
+  TimeSyncAcknowledged
+  PlatformLoginAccepted
+  PlatformLogoutAccepted
+  Rejected
+  ConflictingDirection
+  Undecodable
 }
 
 ///|
@@ -27,13 +38,16 @@ pub fn RouteOutcome::name(self : RouteOutcome) -> String {
     HeartbeatAccepted => "heartbeat-accepted"
     LogoutAccepted => "logout-accepted"
     TimeSyncAcknowledged => "time-sync-acknowledged"
+    PlatformLoginAccepted => "platform-login-accepted"
+    PlatformLogoutAccepted => "platform-logout-accepted"
     Rejected => "rejected"
+    ConflictingDirection => "conflicting-direction"
     Undecodable => "undecodable"
   }
 }
 
 ///|
-/// 处理结果。`response` 为 `None` 表示按标准不应答——实时与补发在上报正确时属于这种情形。
+/// 处理结果。`response` 为 `None` 表示按标准不应答。
 pub(all) struct Handled {
   outcome : RouteOutcome
   response : Frame?
@@ -41,7 +55,6 @@ pub(all) struct Handled {
 }
 
 ///|
-/// 审计条目：平台每次接收都留一条。
 pub(all) struct AuditEntry {
   vin : String
   command : String
@@ -50,7 +63,7 @@ pub(all) struct AuditEntry {
 }
 
 ///|
-/// 平台侧会话表与处理规则。纯逻辑，不含套接字，便于以回放数据驱动测试。
+/// 平台侧会话表与处理规则。纯逻辑，不含套接字。
 pub(all) struct Gateway {
   sessions : Map[String, TerminalSession]
   mut accepted : Int32
@@ -79,54 +92,120 @@ fn audit_and_pack(
     note,
   })
   match outcome {
-    Rejected | Undecodable => g.rejected = g.rejected + 1
+    Rejected | ConflictingDirection | Undecodable =>
+      g.rejected = g.rejected + 1
     _ => g.accepted = g.accepted + 1
   }
   { outcome, response, note }
 }
 
 ///|
-/// 处理一跳已解帧的上行帧。
+/// 应答构造失败时退化为不加密的原始应答，保证平台总有话可说。
+fn answer(
+  frame : Frame,
+  flag : ResponseFlag,
+  shape~ : ResponseShape,
+  answer_time~ : Time?,
+) -> Frame {
+  build_response(frame, flag, shape~, answer_time~) catch {
+    _ => response_frame(frame, flag)
+  }
+}
+
+///|
+/// 处理一跳上行帧。
 ///
-/// 应答语义按 GB/T 32960.3 附录 B：登入必须应答；实时与补发上报校验正确时不应答，
-/// 校验错误时回错误应答；心跳与登出应答。
-pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
+/// 车端与平台间是两套规则：车端实时上报校验正确时不应答（附录 B.2.1），
+/// 平台间实时上报校验正确时必须应答（正文 5.2.2）。两者由 `scope` 区分，不混用。
+pub fn Gateway::handle(
+  self : Gateway,
+  frame : Frame,
+  scope~ : Scope = TerminalToPlatform,
+  shape~ : ResponseShape = KeepRequestPayload,
+  answer_time~ : Time? = None,
+  profile~ : ResponseProfile = Gb2016,
+) -> Handled {
+  // 方向检查：车端只收终端上行，平台间只收平台上行，下行命令平台侧一律不接受。
+  let direction_ok = match scope {
+    TerminalToPlatform => frame.command.is_terminal_uplink()
+    PlatformToPlatform => frame.command.is_platform_uplink()
+  }
+  if !direction_ok {
+    let response = answer(frame, Failure, shape~, answer_time~)
+    let expected = match scope {
+      TerminalToPlatform => "车载终端上行命令"
+      PlatformToPlatform => "平台上行命令"
+    }
+    return audit_and_pack(
+      self,
+      frame.vin,
+      frame.command,
+      ConflictingDirection,
+      Some(response),
+      note="命令 \{frame.command.name()} 不属于\{expected}，应答 0x02",
+    )
+  }
+  match scope {
+    TerminalToPlatform => self.handle_terminal(frame, shape~, answer_time~, profile~)
+    PlatformToPlatform => self.handle_platform(frame, shape~, answer_time~)
+  }
+}
+
+///|
+/// 车端规则（附录 B，资料性）。
+fn Gateway::handle_terminal(
+  self : Gateway,
+  frame : Frame,
+  shape~ : ResponseShape,
+  answer_time~ : Time?,
+  profile~ : ResponseProfile,
+) -> Handled {
   match frame.command {
     VehicleLogin => {
       let login = VehicleLogin::decode(frame.payload[:]) catch {
         _ => {
+          // 附录 B.1：校验错误时忽略所接收数据，不应答。
           return audit_and_pack(
             self,
             frame.vin,
             frame.command,
             LoginIgnored,
             None,
-            note="登入数据单元校验未通过，按标准忽略所接收数据且不应答",
+            note="登入校验未通过，按附录 B.1 忽略且不应答",
           )
         }
       }
       match self.sessions.get(frame.vin) {
         Some(session) => {
           if session.is_online() {
-            let response = response_frame(frame, VinDuplicate)
+            let flag = match profile {
+              Gb2016 => Failure
+              Extended => VinDuplicate
+            }
+            let response = answer(frame, flag, shape~, answer_time~)
+            let note = match profile {
+              Gb2016 => "VIN 已在线，2016 口径只有 0x01/0x02/0xFE，应答 0x02"
+              Extended =>
+                "VIN 已在线，扩展口径按地方标准应答 0x03 VIN 重复"
+            }
             audit_and_pack(
               self,
               frame.vin,
               frame.command,
               LoginDuplicate,
               Some(response),
-              note="VIN 已处于在线会话，应答 0x03 VIN 重复",
+              note~,
             )
           } else {
             session.login(login)
-            let response = response_frame(frame, Success)
+            let response = answer(frame, Success, shape~, answer_time~)
             audit_and_pack(
               self,
               frame.vin,
               frame.command,
               LoginResumed,
               Some(response),
-              note="会话曾关闭，重新登入成功，应答 0x01",
+              note="会话曾关闭，重登成功，应答 0x01",
             )
           }
         }
@@ -139,20 +218,20 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
                 frame.command,
                 LoginIgnored,
                 None,
-                note="VIN 不合法，按标准忽略且不应答",
+                note="VIN 不合法，按附录 B.1 忽略且不应答",
               )
             }
           }
           session.login(login)
           self.sessions.set(frame.vin, session)
-          let response = response_frame(frame, Success)
+          let response = answer(frame, Success, shape~, answer_time~)
           audit_and_pack(
             self,
             frame.vin,
             frame.command,
             LoginAccepted,
             Some(response),
-            note="新建会话，应答 0x01；终端收到应答后才完成本次登入",
+            note="新建会话，应答 0x01；终端收到应答后才完成登入",
           )
         }
       }
@@ -164,14 +243,14 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
       }
       let telemetry = Telemetry::decode(frame.payload[:]) catch {
         _ => {
-          let response = response_frame(frame, Failure)
+          let response = answer(frame, Failure, shape~, answer_time~)
           return audit_and_pack(
             self,
             frame.vin,
             frame.command,
             Rejected,
             Some(response),
-            note="上报数据单元校验失败，应答 0x02；终端应间隔 1min 重发，失败 3 次后停止",
+            note="上报校验失败，应答 0x02；终端间隔 1min 重发至多 3 次",
           )
         }
       }
@@ -179,7 +258,7 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
         Some(session) => {
           session.report(at=telemetry.time, resend~) catch {
             _ => {
-              let response = response_frame(frame, Failure)
+              let response = answer(frame, Failure, shape~, answer_time~)
               return audit_and_pack(
                 self,
                 frame.vin,
@@ -201,7 +280,7 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
             frame.command,
             outcome,
             None,
-            note="校验正确，按标准不做应答",
+            note="校验正确，按附录 B.2.1 车端不做应答",
           )
         }
         None => {
@@ -211,7 +290,7 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
             frame.command,
             Rejected,
             None,
-            note="未见该 VIN 的有效登入，丢弃且不应答",
+            note="未见该 VIN 有效登入，丢弃且不应答",
           )
         }
       }
@@ -227,18 +306,18 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
                 frame.command,
                 Rejected,
                 None,
-                note="心跳时会话不在线，丢弃且不应答",
+                note="心跳时会话不在线，丢弃",
               )
             }
           }
-          let response = response_frame(frame, Success)
+          let response = answer(frame, Success, shape~, answer_time~)
           audit_and_pack(
             self,
             frame.vin,
             frame.command,
             HeartbeatAccepted,
             Some(response),
-            note="心跳应答 0x01",
+            note="心跳应答 0x01（附录 B 未强制，按平台惯例应答）",
           )
         }
         None => {
@@ -256,7 +335,7 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
     VehicleLogout => {
       let logout = VehicleLogout::decode(frame.payload[:]) catch {
         _ => {
-          let response = response_frame(frame, Failure)
+          let response = answer(frame, Failure, shape~, answer_time~)
           return audit_and_pack(
             self,
             frame.vin,
@@ -271,7 +350,7 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
         Some(session) => {
           session.logout() catch {
             _ => {
-              let response = response_frame(frame, Failure)
+              let response = answer(frame, Failure, shape~, answer_time~)
               return audit_and_pack(
                 self,
                 frame.vin,
@@ -282,8 +361,8 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
               )
             }
           }
-          let response = response_frame(frame, Success)
-          let note = "登出流水号 \{logout.sequence}，会话关闭，应答 0x01"
+          let response = answer(frame, Success, shape~, answer_time~)
+          let note = "登出流水号 \{logout.sequence}，会话关闭，应答 0x01（附录 B 未强制）"
           audit_and_pack(
             self,
             frame.vin,
@@ -294,7 +373,7 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
           )
         }
         None => {
-          let response = response_frame(frame, Failure)
+          let response = answer(frame, Failure, shape~, answer_time~)
           audit_and_pack(
             self,
             frame.vin,
@@ -306,38 +385,115 @@ pub fn Gateway::handle(self : Gateway, frame : Frame) -> Handled {
         }
       }
     }
-    TerminalTimeSync => {
-      let response = response_frame(frame, Success)
-      audit_and_pack(
-        self,
-        frame.vin,
-        frame.command,
-        TimeSyncAcknowledged,
-        Some(response),
-        note="校时应答 0x01",
-      )
-    }
     _ => {
-      let response = response_frame(frame, Failure)
+      let response = answer(frame, Failure, shape~, answer_time~)
       audit_and_pack(
         self,
         frame.vin,
         frame.command,
         Rejected,
         Some(response),
-        note="平台不处理该命令，应答 0x02",
+        note="车端场景不处理该命令，应答 0x02",
       )
     }
   }
 }
 
 ///|
-/// 处理一段原始字节：先取报头，再按密钥解密与校验，最后交给业务规则。
-///
-/// 解密或校验失败时，只要报头可读就回 0x02，让终端知道需要重发；报头都读不出则无从应答。
+/// 平台间规则（正文第 5 章，规范性）：校验正确时也要正确应答，这与车端相反。
+fn Gateway::handle_platform(
+  self : Gateway,
+  frame : Frame,
+  shape~ : ResponseShape,
+  answer_time~ : Time?,
+) -> Handled {
+  match frame.command {
+    PlatformLogin => {
+      let login = PlatformLogin::decode(frame.payload[:]) catch {
+        _ => {
+          let response = answer(frame, Failure, shape~, answer_time~)
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="平台登入校验失败，按 5.2.2 做错误应答 0x02",
+          )
+        }
+      }
+      let response = answer(frame, Success, shape~, answer_time~)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        PlatformLoginAccepted,
+        Some(response),
+        note="平台登入校验正确，应答 0x01（用户名 \{login.username.length()} 字符）",
+      )
+    }
+    PlatformLogout => {
+      let response = answer(frame, Success, shape~, answer_time~)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        PlatformLogoutAccepted,
+        Some(response),
+        note="平台登出，应答 0x01",
+      )
+    }
+    RealtimeReport | ResendReport => {
+      let telemetry = Telemetry::decode(frame.payload[:]) catch {
+        _ => {
+          let response = answer(frame, Failure, shape~, answer_time~)
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="平台间上报校验失败，应答 0x02，客户端 1min 后重发至多 3 次",
+          )
+        }
+      }
+      let _ = telemetry
+      let response = answer(frame, Success, shape~, answer_time~)
+      let outcome = match frame.command {
+        ResendReport => ResendAccepted
+        _ => ReportAccepted
+      }
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        outcome,
+        Some(response),
+        note="校验正确，按 5.2.2 平台间仍须正确应答 0x01",
+      )
+    }
+    _ => {
+      let response = answer(frame, Failure, shape~, answer_time~)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        Rejected,
+        Some(response),
+        note="平台间场景不处理该命令，应答 0x02",
+      )
+    }
+  }
+}
+
+///|
+/// 处理一段原始字节：先取报头，再按密钥解密与校验，最后按场景处理。
 pub fn Gateway::handle_bytes(
   self : Gateway,
   data : Bytes,
+  scope~ : Scope = TerminalToPlatform,
+  shape~ : ResponseShape = KeepRequestPayload,
+  answer_time~ : Time? = None,
   key~ : KeyMaterial = NoKey,
 ) -> Handled {
   let header = peek_header(data) catch {
@@ -354,25 +510,40 @@ pub fn Gateway::handle_bytes(
   }
   let frame = decode_frame(data, key~) catch {
     _ => {
-      let placeholder = Frame::new(
-        command=header.command,
-        response=header.response,
-        vin=header.vin,
-        encryption=header.encryption,
-        payload=Bytes::new(0),
-      )
-      let response = response_frame(placeholder, Failure)
+      // 应答要按「其余报文内容一致」保持原加密方式；拿不到密钥就无法加密应答，
+      // 此时只能记录、不应答，而不是给出一个不加密的应答冒充合规。
+      let can_answer = match header.encryption {
+        Plain => true
+        _ => false
+      }
+      let response = if can_answer {
+        let placeholder = Frame::new(
+          command=header.command,
+          response=header.response,
+          vin=header.vin,
+          encryption=header.encryption,
+          payload=Bytes::new(0),
+        )
+        Some(answer(placeholder, Failure, shape~, answer_time~))
+      } else {
+        None
+      }
+      let note = if can_answer {
+        "校验码失败，应答 0x02"
+      } else {
+        "加密帧无法解密（缺 \{header.encryption.name()} 密钥），也无法按同加密方式应答，只记录"
+      }
       return audit_and_pack(
         self,
         header.vin,
         header.command,
         Rejected,
-        Some(response),
-        note="校验码或解密失败，应答 0x02",
+        response,
+        note~,
       )
     }
   }
-  self.handle(frame)
+  self.handle(frame, scope~, shape~, answer_time~)
 }
 
 ///|
