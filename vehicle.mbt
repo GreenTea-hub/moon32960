@@ -1,12 +1,13 @@
 // vehicle.mbt
+// 依据：GB/T 32960.3-2025 表 10（整车数据），共 18 字节 11 字段
+
 ///|
-/// 整车数据（信息类型标志 0x01），GB/T 32960.3-2016 表 8。
+/// 整车数据（信息类型标志 0x01）。
 ///
-/// 布局（共 20 字节）：车辆状态(1) | 充电状态(1) | 运行模式(1) | 车速(2) | 累计里程(4)
-/// | 总电压(2) | 总电流(2) | SOC(1) | DC-DC 状态(1) | 档位(1)
-/// | 绝缘电阻(2) | 加速踏板行程值(1) | 制动踏板状态(1)
+/// 布局：车辆状态(1) 充电状态(1) 运行模式(1) 车速(2) 累计里程(4)
+/// 总电压(2) 总电流(2) SOC(1) DC-DC状态(1) 挡位(1) 绝缘电阻(2)
 ///
-/// 字段保留原始码值，物理换算见各访问函数；异常/无效码不做算术。
+/// 相比 2016 版：删除加速踏板行程值与制动踏板状态；车速范围扩到 0~5000（0.1 km/h）。
 pub(all) struct WholeVehicle {
   vehicle_status : Int32
   charge_status : Int32
@@ -19,12 +20,10 @@ pub(all) struct WholeVehicle {
   dc_dc_status : Int32
   gear : Int32
   insulation_raw : Int32
-  accelerator_raw : Int32
-  brake_status : Int32
 }
 
 ///|
-pub const WHOLE_VEHICLE_LEN : Int32 = 20
+pub const WHOLE_VEHICLE_LEN : Int32 = 18
 
 ///|
 pub fn WholeVehicle::decode(bytes : BytesView) -> WholeVehicle raise FrameError {
@@ -41,8 +40,6 @@ pub fn WholeVehicle::decode(bytes : BytesView) -> WholeVehicle raise FrameError 
     dc_dc_status: bytes[14].to_int(),
     gear: bytes[15].to_int(),
     insulation_raw: u16_be(bytes, 16),
-    accelerator_raw: bytes[18].to_int(),
-    brake_status: bytes[19].to_int(),
   }
 }
 
@@ -60,13 +57,10 @@ pub fn WholeVehicle::to_bytes(self : WholeVehicle) -> Bytes {
   out.push(self.dc_dc_status.to_byte())
   out.push(self.gear.to_byte())
   push_u16_be(out, self.insulation_raw)
-  out.push(self.accelerator_raw.to_byte())
-  out.push(self.brake_status.to_byte())
   Bytes::from_array(out)
 }
 
 ///|
-/// 车速，单位 km/h（原始值乘以 0.1）；异常或无效时返回 None。
 pub fn WholeVehicle::speed_kmh(self : WholeVehicle) -> Double? {
   match FieldState::word(self.speed_raw) {
     Valid => Some(self.speed_raw.to_double() * 0.1)
@@ -75,7 +69,6 @@ pub fn WholeVehicle::speed_kmh(self : WholeVehicle) -> Double? {
 }
 
 ///|
-/// 累计里程，单位 km（原始值乘以 0.1）；异常或无效时返回 None。
 pub fn WholeVehicle::odometer_km(self : WholeVehicle) -> Double? {
   match FieldState::dword(self.odometer_raw) {
     Valid => Some(self.odometer_raw.to_double() * 0.1)
@@ -84,7 +77,6 @@ pub fn WholeVehicle::odometer_km(self : WholeVehicle) -> Double? {
 }
 
 ///|
-/// 总电压，单位 V（原始值乘以 0.1）；异常或无效时返回 None。
 pub fn WholeVehicle::total_voltage_v(self : WholeVehicle) -> Double? {
   match FieldState::word(self.total_voltage_raw) {
     Valid => Some(self.total_voltage_raw.to_double() * 0.1)
@@ -93,7 +85,7 @@ pub fn WholeVehicle::total_voltage_v(self : WholeVehicle) -> Double? {
 }
 
 ///|
-/// 总电流，单位 A：原始值乘以 0.1 后减去 3000A 偏移；异常或无效时返回 None。
+/// 总电流：原始值 ×0.1 − 3000 A。
 pub fn WholeVehicle::total_current_a(self : WholeVehicle) -> Double? {
   match FieldState::word(self.total_current_raw) {
     Valid => Some(self.total_current_raw.to_double() * 0.1 - 3000.0)
@@ -102,7 +94,6 @@ pub fn WholeVehicle::total_current_a(self : WholeVehicle) -> Double? {
 }
 
 ///|
-/// 高压对地绝缘电阻，单位 kΩ；异常或无效时返回 None。
 pub fn WholeVehicle::insulation_kohm(self : WholeVehicle) -> Int32? {
   match FieldState::word(self.insulation_raw) {
     Valid => Some(self.insulation_raw)

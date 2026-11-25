@@ -31,7 +31,7 @@ pub fn encrypt_payload(
 ) -> Bytes raise FrameError {
   match encryption {
     Plain => payload
-    Aes128 => {
+    Aes => {
       match key {
         Aes128Ecb(key~) => {
           aes128_ecb_encrypt(key, pkcs7_pad(payload))
@@ -53,7 +53,7 @@ pub fn encrypt_payload(
         message="RSA 私钥由部署方持有并注入，本项目不内置密钥管理；未注入时拒绝该帧",
       )
     }
-    Abnormal | InvalidMode | Unknown(_) => {
+    Abnormal | InvalidMode | Sm2 | Sm4 | Unknown(_) => {
       raise CryptoUnavailable(
         mode=encryption.name(),
         message="加密方式字节非法，拒绝处理",
@@ -71,7 +71,7 @@ pub fn decrypt_payload(
 ) -> Bytes raise FrameError {
   match encryption {
     Plain => payload
-    Aes128 => {
+    Aes => {
       match key {
         Aes128Ecb(key~) => {
           if payload.length() % 16 != 0 {
@@ -105,7 +105,7 @@ pub fn decrypt_payload(
         message="RSA 解密需要部署方注入私钥实现；未注入时拒绝该帧",
       )
     }
-    Abnormal | InvalidMode | Unknown(_) => {
+    Abnormal | InvalidMode | Sm2 | Sm4 | Unknown(_) => {
       raise CryptoUnavailable(
         mode=encryption.name(),
         message="加密方式字节非法，拒绝处理",

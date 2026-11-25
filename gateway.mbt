@@ -127,13 +127,10 @@ pub fn Gateway::handle(
 ) -> Handled {
   // 应答形态按场景取默认：附录 B（车端）要求其余报文内容与请求一致；
   // 平台间的地方口径是保留报文时间、删除其余内容。正文未规定平台间应答包格式。
+  // 2025 版正文 6.3.2 与附录 B.3.3.2 一致：保留报文时间、删除其余报文内容，两个场景相同。
   let shape = match shape {
     Some(value) => value
-    None =>
-      match scope {
-        TerminalToPlatform => KeepRequestPayload
-        PlatformToPlatform => TimeOnly
-      }
+    None => TimeOnly
   }
   // 方向检查：车端只收终端上行，平台间只收平台上行，下行命令平台侧一律不接受。
   let direction_ok = match scope {
@@ -141,7 +138,7 @@ pub fn Gateway::handle(
     PlatformToPlatform => frame.command.is_platform_uplink()
   }
   if !direction_ok {
-    let response = answer(frame, Failure, shape~, answer_time~)
+    let response = answer(frame, OtherError, shape~, answer_time~)
     let expected = match scope {
       TerminalToPlatform => "车载终端上行命令"
       PlatformToPlatform => "平台上行命令"
@@ -188,16 +185,9 @@ fn Gateway::handle_terminal(
       match self.sessions.get(frame.vin) {
         Some(session) => {
           if session.is_online() {
-            let flag = match profile {
-              Gb2016 => Failure
-              Extended => VinDuplicate
-            }
+            let flag = VinDuplicate
             let response = answer(frame, flag, shape~, answer_time~)
-            let note = match profile {
-              Gb2016 => "VIN 已在线，2016 口径只有 0x01/0x02/0xFE，应答 0x02"
-              Extended =>
-                "VIN 已在线，扩展口径按地方标准应答 0x03 VIN 重复"
-            }
+            let note = "VIN 已在线，按表 4 应答 0x03 VIN 重复"
             audit_and_pack(
               self,
               frame.vin,
@@ -253,7 +243,7 @@ fn Gateway::handle_terminal(
       }
       let telemetry = Telemetry::decode(frame.payload[:]) catch {
         _ => {
-          let response = answer(frame, Failure, shape~, answer_time~)
+          let response = answer(frame, OtherError, shape~, answer_time~)
           return audit_and_pack(
             self,
             frame.vin,
@@ -357,7 +347,7 @@ fn Gateway::handle_terminal(
     VehicleLogout => {
       let logout = VehicleLogout::decode(frame.payload[:]) catch {
         _ => {
-          let response = answer(frame, Failure, shape~, answer_time~)
+          let response = answer(frame, OtherError, shape~, answer_time~)
           return audit_and_pack(
             self,
             frame.vin,
@@ -372,7 +362,7 @@ fn Gateway::handle_terminal(
         Some(session) => {
           session.logout() catch {
             _ => {
-              let response = answer(frame, Failure, shape~, answer_time~)
+              let response = answer(frame, OtherError, shape~, answer_time~)
               return audit_and_pack(
                 self,
                 frame.vin,
@@ -395,7 +385,7 @@ fn Gateway::handle_terminal(
           )
         }
         None => {
-          let response = answer(frame, Failure, shape~, answer_time~)
+          let response = answer(frame, OtherError, shape~, answer_time~)
           audit_and_pack(
             self,
             frame.vin,
@@ -408,7 +398,7 @@ fn Gateway::handle_terminal(
       }
     }
     _ => {
-      let response = answer(frame, Failure, shape~, answer_time~)
+      let response = answer(frame, OtherError, shape~, answer_time~)
       audit_and_pack(
         self,
         frame.vin,
@@ -433,7 +423,7 @@ fn Gateway::handle_platform(
     PlatformLogin => {
       let login = PlatformLogin::decode(frame.payload[:]) catch {
         _ => {
-          let response = answer(frame, Failure, shape~, answer_time~)
+          let response = answer(frame, OtherError, shape~, answer_time~)
           return audit_and_pack(
             self,
             frame.vin,
@@ -468,7 +458,7 @@ fn Gateway::handle_platform(
     RealtimeReport | ResendReport => {
       let telemetry = Telemetry::decode(frame.payload[:]) catch {
         _ => {
-          let response = answer(frame, Failure, shape~, answer_time~)
+          let response = answer(frame, OtherError, shape~, answer_time~)
           return audit_and_pack(
             self,
             frame.vin,
@@ -495,7 +485,7 @@ fn Gateway::handle_platform(
       )
     }
     _ => {
-      let response = answer(frame, Failure, shape~, answer_time~)
+      let response = answer(frame, OtherError, shape~, answer_time~)
       audit_and_pack(
         self,
         frame.vin,
@@ -546,7 +536,7 @@ pub fn Gateway::handle_bytes(
           encryption=header.encryption,
           payload=Bytes::new(0),
         )
-        Some(answer(placeholder, Failure, shape~, answer_time~))
+        Some(answer(placeholder, OtherError, shape~, answer_time~))
       } else {
         None
       }

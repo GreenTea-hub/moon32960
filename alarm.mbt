@@ -1,13 +1,11 @@
 // alarm.mbt
+// 依据：GB/T 32960.3-2025 表 23（报警数据）、表 24（通用报警标志位）
+
 ///|
-/// 报警数据（信息类型标志 0x07），表 19。
+/// 报警数据（信息类型标志 0x06）。等级 0~4，4 为热事件。
 ///
-/// 布局：最高报警等级(1) | 通用报警标志(4) | 五组故障列表，每组为 总数(1) + N 条记录。
-///   - 可充电储能装置故障：N1，每条 4 字节
-///   - 驱动电机故障：N2，每条 4 字节
-///   - 发动机故障：N3，每条 4 字节
-///   - 其他故障：N4，每条 4 字节
-///   - 通用报警故障：N5，每条 2 字节（1 字节标志位序号 + 1 字节故障等级）
+/// 布局：最高报警等级(1) 通用报警标志(4) + 五组列表
+/// 每组为 总数(1) + N 条记录：储能/电机/发动机/其他各 4 字节，通用报警 2 字节。
 pub(all) struct Alarm {
   level_raw : Int32
   general_flags_raw : Int32
@@ -33,16 +31,14 @@ fn read_list(
   let count_raw = bytes[offset].to_int()
   let count = match FieldState::byte(count_raw) {
     Valid => {
-      check_count(count_raw, 0, 252, field=what)
+      check_count(count_raw, 0, 253, field=what)
       count_raw
     }
     _ => 0
   }
   let need = 1 + count * width
   if offset + need > end {
-    raise Payload(
-      message="\{what}: 声明 \{count} 条需要 \{need} 字节，实际不足",
-    )
+    raise Payload(message="\{what}: 声明 \{count} 条需要 \{need} 字节，实际不足")
   }
   let items : Array[Int32] = []
   for i in 0..<count {
@@ -76,13 +72,7 @@ pub fn Alarm::decode_at(
 ) -> (Alarm, Int32) raise FrameError {
   ensure_at(bytes, offset, 5, what="报警数据")
   let mut cursor = offset + 5
-  let (storage_faults, used1) = read_list(
-    bytes,
-    cursor,
-    end,
-    4,
-    what="可充电储能装置故障列表",
-  )
+  let (storage_faults, used1) = read_list(bytes, cursor, end, 4, what="可充电储能装置故障列表")
   cursor = cursor + used1
   let (motor_faults, used2) = read_list(bytes, cursor, end, 4, what="驱动电机故障列表")
   cursor = cursor + used2
@@ -90,13 +80,7 @@ pub fn Alarm::decode_at(
   cursor = cursor + used3
   let (other_faults, used4) = read_list(bytes, cursor, end, 4, what="其他故障列表")
   cursor = cursor + used4
-  let (general_faults, used5) = read_list(
-    bytes,
-    cursor,
-    end,
-    2,
-    what="通用报警故障列表",
-  )
+  let (general_faults, used5) = read_list(bytes, cursor, end, 2, what="通用报警故障列表")
   cursor = cursor + used5
   (
     {
@@ -126,7 +110,7 @@ pub fn Alarm::to_bytes(self : Alarm) -> Bytes {
 }
 
 ///|
-/// 最高报警等级：0 无故障，1~3 为分级故障，0xFE 异常，0xFF 无效。
+/// 最高报警等级：0 无故障，1~3 分级，4 热事件，0xFE/0xFF 异常无效。
 pub fn Alarm::level(self : Alarm) -> Int32? {
   match self.level_raw {
     0xfe | 0xff => None
@@ -135,13 +119,11 @@ pub fn Alarm::level(self : Alarm) -> Int32? {
 }
 
 ///|
-/// 通用报警标志第 `bit` 位是否为 1（0~31）。位定义见表 19 下表。
 pub fn Alarm::has_flag(self : Alarm, bit : Int32) -> Bool {
   ((self.general_flags_raw / pow2(bit)) % 2) == 1
 }
 
 ///|
-/// 2 的整数次幂，避免在解码路径引入浮点。
 fn pow2(exp : Int32) -> Int32 {
   let mut result = 1
   let mut i = 0
@@ -153,7 +135,6 @@ fn pow2(exp : Int32) -> Int32 {
 }
 
 ///|
-/// 触发报警的标志位清单，按位序号升序。
 pub fn Alarm::active_flags(self : Alarm) -> Array[Int32] {
   let bits : Array[Int32] = []
   for bit in 0..<32 {
