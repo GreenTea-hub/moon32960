@@ -61,7 +61,7 @@ test "补发与实时分开计数" {
 }
 
 ///|
-test "补发超出 7 日窗口被拒绝" {
+test "补发超窗默认不拒收（7 日是发送方义务）" {
   let session = @moon32960.TerminalSession::new("LGWEF4A56MF123456")
   session.login(sample_login())
   session.report(at=sample_time())
@@ -73,9 +73,26 @@ test "补发超出 7 日窗口被拒绝" {
     minute=31,
     second=0,
   )
-  try session.report(at=too_late, resend=true) catch {
+  session.report(at=too_late, resend=true)
+  assert_eq(session.resend_count, 1)
+}
+
+///|
+test "开启严格审计后补发超窗才报错" {
+  let session = @moon32960.TerminalSession::new("LGWEF4A56MF123456")
+  session.login(sample_login())
+  session.report(at=sample_time())
+  let too_late = try! @moon32960.Time::new(
+    year=2026,
+    month=11,
+    day=27,
+    hour=9,
+    minute=31,
+    second=0,
+  )
+  try session.report(at=too_late, resend=true, enforce_window=true) catch {
     _ => ()
   } noraise {
-    _ => fail("超过 7 日的补发未被拒绝")
+    _ => fail("开启严格审计后仍未拒绝")
   }
 }

@@ -137,10 +137,25 @@ test "平台间实时上报校验正确也必须应答" {
 }
 
 ///|
-test "下行命令在平台侧被判定方向不符" {
+test "终端校时是上行命令，平台应答 0x01" {
   let gateway = @moon32960.Gateway::new()
   let frame = @moon32960.Frame::new(
     command=@moon32960.Command::TerminalTimeSync,
+    response=@moon32960.Command,
+    vin="LGWEF4A56MF123456",
+    encryption=@moon32960.Encryption::Plain,
+    payload=Bytes::new(0),
+  )
+  let handled = gateway.handle(frame)
+  assert_eq(handled.outcome.name(), "time-sync-acknowledged")
+  assert_true(flag_of(handled) is Some(@moon32960.ResponseFlag::Success))
+}
+
+///|
+test "平台下行 0x80 在平台侧方向不符" {
+  let gateway = @moon32960.Gateway::new()
+  let frame = @moon32960.Frame::new(
+    command=@moon32960.Command::PlatformDownlink,
     response=@moon32960.Command,
     vin="LGWEF4A56MF123456",
     encryption=@moon32960.Encryption::Plain,
