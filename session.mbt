@@ -8,7 +8,8 @@ pub(all) enum SessionState {
 }
 
 ///|
-/// 补发允许窗口，单位秒：GB/T 32960.3 要求补发 7 日内链路异常期间的数据。
+/// 补发时间窗，单位秒。标准把「7 日内链路异常期间的数据」写成发送方的存储义务，
+/// 不是平台的拒收规则；因此默认不校验，仅作为终端侧建议与可选审计开关保留。
 pub const RESEND_WINDOW_SECONDS : Int32 = 7 * 24 * 3600
 
 ///|
@@ -54,25 +55,31 @@ pub fn TerminalSession::login(self : TerminalSession, login : VehicleLogin) -> U
 }
 
 ///|
-/// 记录一次上报。`resend` 为 true 表示补发，会计入补发计数并检查 7 日窗口。
+/// 记录一次上报。`resend` 为 true 表示补发。
+///
+/// `enforce_window` 默认关闭：7 日窗口是对发送方存储的要求，平台不应因此拒收；
+/// 需要严格审计的部署可以打开，超窗返回错误由调用方决定如何处理。
 pub fn TerminalSession::report(
   self : TerminalSession,
   at~ : Time,
   resend~ : Bool = false,
+  enforce_window~ : Bool = false,
 ) -> Unit raise FrameError {
   match self.state {
     Online => {
       if resend {
-        match self.last_report {
-          Some(last) => {
-            let gap = second_of_day(at) - second_of_day(last)
-            if gap < -RESEND_WINDOW_SECONDS || gap > RESEND_WINDOW_SECONDS {
-              raise Payload(
-                message="补发时间 \{at.to_display()} 超出最近上报 \{last.to_display()} 的 7 日窗口",
-              )
+        if enforce_window {
+          match self.last_report {
+            Some(last) => {
+              let gap = second_of_day(at) - second_of_day(last)
+              if gap < -RESEND_WINDOW_SECONDS || gap > RESEND_WINDOW_SECONDS {
+                raise Payload(
+                  message="补发时间 \{at.to_display()} 超出最近上报 \{last.to_display()} 的 7 日窗口",
+                )
+              }
             }
+            None => ()
           }
-          None => ()
         }
         self.resend_count = self.resend_count + 1
       } else {

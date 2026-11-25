@@ -121,10 +121,20 @@ pub fn Gateway::handle(
   self : Gateway,
   frame : Frame,
   scope~ : Scope = TerminalToPlatform,
-  shape~ : ResponseShape = KeepRequestPayload,
+  shape? : ResponseShape,
   answer_time~ : Time? = None,
   profile~ : ResponseProfile = Gb2016,
 ) -> Handled {
+  // 应答形态按场景取默认：附录 B（车端）要求其余报文内容与请求一致；
+  // 平台间的地方口径是保留报文时间、删除其余内容。正文未规定平台间应答包格式。
+  let shape = match shape {
+    Some(value) => value
+    None =>
+      match scope {
+        TerminalToPlatform => KeepRequestPayload
+        PlatformToPlatform => TimeOnly
+      }
+  }
   // 方向检查：车端只收终端上行，平台间只收平台上行，下行命令平台侧一律不接受。
   let direction_ok = match scope {
     TerminalToPlatform => frame.command.is_terminal_uplink()
@@ -256,16 +266,16 @@ fn Gateway::handle_terminal(
       }
       match self.sessions.get(frame.vin) {
         Some(session) => {
+          // 7 日窗口是发送方的存储义务，平台不因此拒收；需要严格审计时由调用方开启。
           session.report(at=telemetry.time, resend~) catch {
             _ => {
-              let response = answer(frame, Failure, shape~, answer_time~)
               return audit_and_pack(
                 self,
                 frame.vin,
                 frame.command,
                 Rejected,
-                Some(response),
-                note="上报时间超出补发窗口，应答 0x02",
+                None,
+                note="会话状态异常（未在线），丢弃",
               )
             }
           }
@@ -294,6 +304,18 @@ fn Gateway::handle_terminal(
           )
         }
       }
+    }
+    TerminalTimeSync => {
+      // 0x08 是终端上行请求，数据单元为空；平台应答 0x01 表示可以校时。
+      let response = answer(frame, Success, shape~, answer_time~)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        TimeSyncAcknowledged,
+        Some(response),
+        note="终端校时请求，数据单元为空，应答 0x01",
+      )
     }
     Heartbeat => {
       match self.sessions.get(frame.vin) {

@@ -125,11 +125,11 @@ pub fn is_response_packet(frame : Frame) -> Bool {
 }
 
 ///|
-/// 命令方向：0x01~0x07 为上行，0x08 与 0x80 为下行。
+/// 命令方向。0x08 终端校时是**上行**命令（终端向平台请求校时），只有 0x80 是下行。
 pub fn Command::is_uplink(self : Command) -> Bool {
   match self {
     VehicleLogin | RealtimeReport | ResendReport | VehicleLogout | PlatformLogin |
-    PlatformLogout | Heartbeat => true
+    PlatformLogout | Heartbeat | TerminalTimeSync => true
     _ => false
   }
 }
@@ -137,16 +137,17 @@ pub fn Command::is_uplink(self : Command) -> Bool {
 ///|
 pub fn Command::is_downlink(self : Command) -> Bool {
   match self {
-    TerminalTimeSync | PlatformDownlink => true
+    PlatformDownlink => true
     _ => false
   }
 }
 
 ///|
-/// 该命令是否属于车端场景（附录 B 列出的终端上行命令）。
+/// 车端上行命令集（附录 B）：含登入、实时、补发、登出、心跳、终端校时。
 pub fn Command::is_terminal_uplink(self : Command) -> Bool {
   match self {
-    VehicleLogin | RealtimeReport | ResendReport | VehicleLogout | Heartbeat => true
+    VehicleLogin | RealtimeReport | ResendReport | VehicleLogout | Heartbeat |
+    TerminalTimeSync => true
     _ => false
   }
 }
