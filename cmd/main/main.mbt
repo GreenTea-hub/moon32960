@@ -476,8 +476,8 @@ fn case_platform() -> Unit raise {
     scope=@moon32960.Scope::PlatformToPlatform,
   )
   print_handled(platform_handled)
-  section("③ 方向检查")
-  let wrong = @moon32960.Gateway::new()
+  section("③ 终端校时（0x08，上行）")
+  let clock = @moon32960.Gateway::new()
   let time_sync = @moon32960.Frame::new(
     command=@moon32960.Command::TerminalTimeSync,
     response=@moon32960.Command,
@@ -485,9 +485,19 @@ fn case_platform() -> Unit raise {
     encryption=@moon32960.Encryption::Plain,
     payload=Bytes::new(0),
   )
-  let why = wrong.handle(time_sync)
-  print_handled(why)
-  println("  · 0x08 是平台下行命令，平台侧收到即方向不符")
+  print_handled(clock.handle(time_sync))
+  println("  · 0x08 是终端上行请求，数据单元为空，平台应答 0x01")
+  section("④ 平台下行（0x80，方向不符）")
+  let wrong = @moon32960.Gateway::new()
+  let downlink = @moon32960.Frame::new(
+    command=@moon32960.Command::PlatformDownlink,
+    response=@moon32960.Command,
+    vin="LGWEF4A56MF123456",
+    encryption=@moon32960.Encryption::Plain,
+    payload=Bytes::new(0),
+  )
+  print_handled(wrong.handle(downlink))
+  println("  · 0x80 是平台下行命令，平台侧收到即方向不符")
   println("  · 平台间报文的第 4~20 字节按 17 位标识处理，本实现沿用 VIN 字母表校验")
 }
 

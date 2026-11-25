@@ -467,7 +467,7 @@ pub fn TerminalSession::is_online(Self) -> Bool
 pub fn TerminalSession::login(Self, VehicleLogin) -> Unit
 pub fn TerminalSession::logout(Self) -> Unit raise FrameError
 pub fn TerminalSession::new(String) -> Self raise FrameError
-pub fn TerminalSession::report(Self, at~ : Time, resend? : Bool) -> Unit raise FrameError
+pub fn TerminalSession::report(Self, at~ : Time, resend? : Bool, enforce_window? : Bool) -> Unit raise FrameError
 
 pub(all) struct Time {
   year : Int32
