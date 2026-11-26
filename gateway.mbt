@@ -173,6 +173,19 @@ fn Gateway::handle_terminal(
 ) -> Handled {
   match frame.command {
     VehicleLogin => {
+      // 表 2：传输车辆数据时识别码必须是 VIN（GB 16735），帧层只做了可打印 ASCII 校验
+      validate_vin(frame.vin) catch {
+        _ => {
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            LoginIgnored,
+            None,
+            note="识别码不是合法 VIN，车辆登入按标准忽略且不应答",
+          )
+        }
+      }
       let login = VehicleLogin::decode(frame.payload[:]) catch {
         _ => {
           // 附录 B.1：校验错误时忽略所接收数据，不应答。
@@ -428,7 +441,7 @@ fn Gateway::handle_terminal(
       }
       match self.sessions.get(frame.vin) {
         Some(session) => {
-          session.logout() catch {
+          session.logout(sequence=logout.sequence) catch {
             _ => {
               let response = answer(frame, OtherError, shape~, answer_time~)
               return audit_and_pack(

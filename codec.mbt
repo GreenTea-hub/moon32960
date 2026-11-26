@@ -36,7 +36,10 @@ pub const VIN_LEN : Int32 = 17
 pub const ICCID_LEN : Int32 = 20
 
 ///|
-/// 校验 VIN：17 位、ASCII、且不含 VIN 字母表排除的 I/O/Q。
+/// 严格 VIN 校验（GB 16735）：17 位、ASCII、不含 I/O/Q。
+///
+/// 表 2 规定「传输车辆数据时用 VIN，传输其他数据时用唯一自定义编码」，
+/// 因此帧层只用 `validate_identifier` 做宽松校验，车辆数据在业务层再调本函数。
 pub fn validate_vin(vin : String) -> Unit raise FrameError {
   if vin.length() != VIN_LEN {
     raise BadVin(vin~)
@@ -53,8 +56,25 @@ pub fn validate_vin(vin : String) -> Unit raise FrameError {
 }
 
 ///|
+/// 唯一识别码的帧层校验：固定 17 字节、可打印 ASCII（GB/T 1988 范围）。
+///
+/// 传输车辆数据时应为 VIN；传输其他数据时允许厂商唯一自定义编码，
+/// 因此这里不强制 VIN 字母表。
+pub fn validate_identifier(text : String) -> Unit raise FrameError {
+  if text.length() != VIN_LEN {
+    raise BadVin(vin=text)
+  }
+  for ch in text {
+    let code = ch.to_int()
+    if code < 0x20 || code > 0x7e {
+      raise BadVin(vin=text)
+    }
+  }
+}
+
+///|
 pub fn encode_vin(vin : String) -> Bytes raise FrameError {
-  validate_vin(vin)
+  validate_identifier(vin)
   let raw = @utf8.encode(vin)
   if raw.length() != VIN_LEN {
     raise BadVin(vin~)
@@ -67,7 +87,7 @@ pub fn decode_vin(bytes : BytesView) -> String raise FrameError {
   let vin = @utf8.decode(bytes) catch {
     _ => raise BadVin(vin="<not valid utf8>")
   }
-  validate_vin(vin)
+  validate_identifier(vin)
   vin
 }
 

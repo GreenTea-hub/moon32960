@@ -137,3 +137,48 @@ pub fn WholeVehicle::operation_mode_name(self : WholeVehicle) -> String {
     _ => "其他"
   }
 }
+
+///|
+/// 挡位状态，依据附录 A.1（规范性）的位定义：
+/// Bit0 = 1 挡位无效 / 0 有效；Bit1 = 1 有驱动力；Bit2 = 1 有制动力；
+/// Bit3 预留；Bit4~7 为挡位编码（0000 空挡、0001~0110 1~6 挡、1101 倒挡、1110 D 挡、1111 P 挡）。
+pub fn WholeVehicle::gear_valid(self : WholeVehicle) -> Bool {
+  self.gear % 2 == 0
+}
+
+///|
+pub fn WholeVehicle::gear_has_drive_force(self : WholeVehicle) -> Bool {
+  (self.gear / 2) % 2 == 1
+}
+
+///|
+pub fn WholeVehicle::gear_has_brake_force(self : WholeVehicle) -> Bool {
+  (self.gear / 4) % 2 == 1
+}
+
+///|
+/// 挡位编码（Bit4~7），0~15。
+pub fn WholeVehicle::gear_code(self : WholeVehicle) -> Int32 {
+  self.gear / 16
+}
+
+///|
+/// 挡位名称，按附录 A.1 的编码表。
+pub fn WholeVehicle::gear_name(self : WholeVehicle) -> String {
+  if !self.gear_valid() {
+    return "挡位无效"
+  }
+  match self.gear_code() {
+    0x0 => "空挡"
+    0x1 => "1 挡"
+    0x2 => "2 挡"
+    0x3 => "3 挡"
+    0x4 => "4 挡"
+    0x5 => "5 挡"
+    0x6 => "6 挡"
+    0xd => "倒挡"
+    0xe => "自动 D 挡"
+    0xf => "停车 P 挡"
+    _ => "其他"
+  }
+}

@@ -124,6 +124,8 @@ pub fn u32_be(BytesView, Int32) -> Int32
 
 pub fn validate_iccid(String) -> Unit raise FrameError
 
+pub fn validate_identifier(String) -> Unit raise FrameError
+
 pub fn validate_vin(String) -> Unit raise FrameError
 
 // Errors
@@ -590,7 +592,7 @@ pub(all) struct TerminalSession {
 pub fn TerminalSession::heartbeat(Self) -> Unit raise FrameError
 pub fn TerminalSession::is_online(Self) -> Bool
 pub fn TerminalSession::login(Self, VehicleLogin) -> Unit
-pub fn TerminalSession::logout(Self) -> Unit raise FrameError
+pub fn TerminalSession::logout(Self, sequence? : Int32) -> Unit raise FrameError
 pub fn TerminalSession::new(String) -> Self raise FrameError
 pub fn TerminalSession::report(Self, at~ : Time, resend? : Bool, enforce_window? : Bool) -> Unit raise FrameError
 
@@ -655,6 +657,11 @@ pub(all) struct WholeVehicle {
 }
 pub fn WholeVehicle::charge_status_name(Self) -> String
 pub fn WholeVehicle::decode(BytesView) -> Self raise FrameError
+pub fn WholeVehicle::gear_code(Self) -> Int32
+pub fn WholeVehicle::gear_has_brake_force(Self) -> Bool
+pub fn WholeVehicle::gear_has_drive_force(Self) -> Bool
+pub fn WholeVehicle::gear_name(Self) -> String
+pub fn WholeVehicle::gear_valid(Self) -> Bool
 pub fn WholeVehicle::insulation_kohm(Self) -> Int32?
 pub fn WholeVehicle::odometer_km(Self) -> Double?
 pub fn WholeVehicle::operation_mode_name(Self) -> String

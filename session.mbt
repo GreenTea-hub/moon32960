@@ -111,9 +111,24 @@ pub fn TerminalSession::heartbeat(self : TerminalSession) -> Unit raise FrameErr
 }
 
 ///|
-pub fn TerminalSession::logout(self : TerminalSession) -> Unit raise FrameError {
+/// 登出。表 28 要求登出流水号与当次登入一致，`sequence` 非空时校验。
+pub fn TerminalSession::logout(
+  self : TerminalSession,
+  sequence? : Int32,
+) -> Unit raise FrameError {
   match self.state {
-    Online => self.state = SessionState::Closed
+    Online => {
+      match sequence {
+        Some(value) =>
+          if value != self.sequence {
+            raise Payload(
+              message="登出流水号 \{value} 与登入流水号 \{self.sequence} 不一致",
+            )
+          }
+        None => ()
+      }
+      self.state = SessionState::Closed
+    }
     _ => raise Payload(message="未登入即登出：vin=\{self.vin}")
   }
 }

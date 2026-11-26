@@ -213,20 +213,20 @@ pub(all) struct ParamItem {
 }
 
 ///|
-/// 参数值的固定长度（表 B.8）。0x04/0x05 为域名场景，长度可变，返回 None。
+/// 参数值的固定长度，依据表 B.8。
+///
+/// 表 B.8 只定义 0x01~0x08；0x09~0x7F 为预留、0x80~0xFE 为用户自定义，
+/// 长度由厂商约定，标准未给出，因此返回 None 而不是编造宽度。
+/// 0x04 是域名长度、0x05 是域名内容，二者成对出现，也返回 None。
 pub fn param_len(id : Int32) -> Int32? {
   match id {
     0x01 => Some(2)
     0x02 => Some(1)
     0x03 => Some(1)
-    0x04 => None
-    0x05 => None
     0x06 => Some(2)
     0x07 => Some(5)
     0x08 => Some(5)
-    0x09 => Some(1)
-    0x0a => Some(2)
-    _ => Some(0)
+    _ => None
   }
 }
 
