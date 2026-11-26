@@ -141,6 +141,23 @@ pub fn Gateway::handle(
     TerminalToPlatform => frame.command.is_terminal_uplink()
     PlatformToPlatform => frame.command.is_platform_uplink()
   }
+  // 表 B.1 车端识别码固定为 VIN（GB 16735）；正文表 2 平台间允许唯一自定义编码。
+  // 因此严格 VIN 校验只施加在车端场景。
+  if scope is TerminalToPlatform {
+    validate_vin(frame.vin) catch {
+      _ => {
+        let response = answer(frame, OtherError, shape~, answer_time~)
+        return audit_and_pack(
+          self,
+          frame.vin,
+          frame.command,
+          Rejected,
+          Some(response),
+          note="车端识别码不是合法 VIN，按表 B.1 拒绝并应答 0x02",
+        )
+      }
+    }
+  }
   if !direction_ok {
     let response = answer(frame, OtherError, shape~, answer_time~)
     let expected = match scope {
@@ -173,19 +190,7 @@ fn Gateway::handle_terminal(
 ) -> Handled {
   match frame.command {
     VehicleLogin => {
-      // 表 2：传输车辆数据时识别码必须是 VIN（GB 16735），帧层只做了可打印 ASCII 校验
-      validate_vin(frame.vin) catch {
-        _ => {
-          return audit_and_pack(
-            self,
-            frame.vin,
-            frame.command,
-            LoginIgnored,
-            None,
-            note="识别码不是合法 VIN，车辆登入按标准忽略且不应答",
-          )
-        }
-      }
+
       let login = VehicleLogin::decode(frame.payload[:]) catch {
         _ => {
           // 附录 B.1：校验错误时忽略所接收数据，不应答。

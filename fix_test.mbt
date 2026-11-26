@@ -103,9 +103,10 @@ test "登入时识别码必须是 VIN" {
         systems=[],
       ).to_bytes(),
   }
+  // 表 B.1 车端识别码必须是 VIN，非法则拒绝并应答 0x02
   let handled = gateway.handle(frame)
-  assert_eq(handled.outcome.name(), "login-ignored")
-  assert_true(handled.response is None)
+  assert_eq(handled.outcome.name(), "rejected")
+  assert_true(handled.response is Some(_))
 }
 
 ///|
