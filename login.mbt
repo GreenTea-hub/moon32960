@@ -1,45 +1,72 @@
 // login.mbt
+// 依据：GB/T 32960.3-2025 表 6（车辆登入）、表 28（车辆登出）、表 29（平台登入）、表 30（平台登出）
+
 ///|
-/// 车辆登入数据单元（GB/T 32960.3-2016 表 6）。
+/// 电池管理系统（BMS）及其管理的动力蓄电池包编码。
 ///
-/// 布局：登入时间(6) | 登入流水号(2) | ICCID(20) | 可充电储能子系统数 n(1) | 编码长度 m(1) | 编码(n×m)
-/// 最小长度 30 字节；`storage_codes` 为 n 个等长（m 字节）的子系统编码。
+/// 2025 版表 6 用「电池管理系统数 + 每系统包个数 + 24 位包编码」描述储能配置，
+/// 取代了 2016 版的「可充电储能子系统数 + 编码长度 + 变长编码」。
+pub(all) struct BatteryManagementSystem {
+  /// 该 BMS 管理的动力蓄电池包个数，有效范围 0~50。
+  pack_count : Int32
+  /// 各包 24 字符编码，按 GB/T 34014。长度应等于 pack_count。
+  pack_codes : Array[String]
+}
+
+///|
+/// 动力蓄电池包编码长度，按 GB/T 34014 固定 24 字符。
+pub const PACK_CODE_LEN : Int32 = 24
+
+///|
+/// 电池管理系统数上限（表 6：有效值范围 0~20）。
+pub const MAX_BMS_COUNT : Int32 = 20
+
+///|
+/// 单个 BMS 管理的包数上限（表 6：有效范围 0~50）。
+pub const MAX_PACK_PER_BMS : Int32 = 50
+
+///|
+/// 车辆登入数据单元（表 6）。
+///
+/// 布局：数据采集时间(6) 登入流水号(2) ICCID(20) 电池管理系统数 n(1)
+/// BMS 包个数 BYTE[n] 包编码 Σn(m)×24
 pub(all) struct VehicleLogin {
   time : Time
   sequence : Int32
   iccid : String
-  storage_codes : Array[String]
-  code_len : Int32
+  systems : Array[BatteryManagementSystem]
 }
 
 ///|
-pub const VEHICLE_LOGIN_MIN_LEN : Int32 = 30
+/// 登入数据单元固定前段长度：时间 6 + 流水号 2 + ICCID 20 + BMS 数 1。
+pub const LOGIN_FIXED_LEN : Int32 = 29
 
 ///|
-/// 登入流水号取自 1~65531，逐次加一，跨天归零。
 pub fn VehicleLogin::new(
   time~ : Time,
   sequence~ : Int32,
   iccid~ : String,
-  storage_codes~ : Array[String],
-  code_len~ : Int32,
+  systems~ : Array[BatteryManagementSystem],
 ) -> VehicleLogin raise FrameError {
+  // 表 6：流水号 1~65531，逐次加一，跨天归零
   if sequence < 1 || sequence > 65531 {
-    raise FieldOutOfRange(field="登录流水号", value=sequence, low=1, high=65531)
+    raise FieldOutOfRange(field="登入流水号", value=sequence, low=1, high=65531)
   }
-  check_count(storage_codes.length(), 0, 250, field="可充电储能子系统数")
-  check_count(code_len, 0, 50, field="可充电储能系统编码长度")
-  if code_len == 0 && storage_codes.length() > 0 {
-    raise Payload(message="编码长度为 0，但传入了子系统编码")
-  }
-  for code in storage_codes {
-    if code.length() != code_len {
+  check_count(systems.length(), 0, MAX_BMS_COUNT, field="电池管理系统数")
+  for system in systems {
+    check_count(system.pack_count, 0, MAX_PACK_PER_BMS, field="BMS 对应动力蓄电池包个数")
+    if system.pack_codes.length() != system.pack_count {
       raise Payload(
-        message="子系统编码长度 \{code.length()} 与声明长度 \{code_len} 不符",
+        message="包个数 \{system.pack_count} 与编码条数 \{system.pack_codes.length()} 不一致",
       )
     }
+    for code in system.pack_codes {
+      if code.length() != PACK_CODE_LEN {
+        raise Payload(message="动力蓄电池包编码应为 \{PACK_CODE_LEN} 字符，实际 \{code.length()}")
+      }
+    }
   }
-  { time, sequence, iccid, storage_codes, code_len }
+  { time, sequence, iccid, systems }
 }
 
 ///|
@@ -52,66 +79,81 @@ pub fn VehicleLogin::to_bytes(self : VehicleLogin) -> Bytes raise FrameError {
   for byte in encode_iccid(self.iccid) {
     out.push(byte)
   }
-  out.push(self.storage_codes.length().to_byte())
-  out.push(self.code_len.to_byte())
-  for code in self.storage_codes {
-    for byte in @utf8.encode(code) {
-      out.push(byte)
+  out.push(self.systems.length().to_byte())
+  for system in self.systems {
+    out.push(system.pack_count.to_byte())
+  }
+  for system in self.systems {
+    for code in system.pack_codes {
+      for byte in @utf8.encode(code) {
+        out.push(byte)
+      }
     }
   }
   Bytes::from_array(out)
 }
 
 ///|
-pub fn VehicleLogin::decode_at(
-  bytes : BytesView,
-  offset : Int32,
-) -> (VehicleLogin, Int32) raise FrameError {
-  ensure_at(bytes, offset, VEHICLE_LOGIN_MIN_LEN, what="车辆登入")
-  let time = Time::from_bytes(bytes[offset:offset + 6])
-  let sequence = u16_be(bytes, offset + 6)
+pub fn VehicleLogin::decode(bytes : BytesView) -> VehicleLogin raise FrameError {
+  ensure_at(bytes, 0, LOGIN_FIXED_LEN, what="车辆登入")
+  let time = Time::from_bytes(bytes[0:6])
+  let sequence = u16_be(bytes, 6)
   if sequence < 1 || sequence > 65531 {
-    raise FieldOutOfRange(
-      field="登录流水号",
-      value=sequence,
-      low=1,
-      high=65531,
+    raise FieldOutOfRange(field="登入流水号", value=sequence, low=1, high=65531)
+  }
+  let iccid = decode_iccid(bytes[8:28])
+  let bms_count = bytes[28].to_int()
+  check_count(bms_count, 0, MAX_BMS_COUNT, field="电池管理系统数")
+  // 读取各 BMS 的包个数
+  ensure_at(bytes, LOGIN_FIXED_LEN, bms_count, what="BMS 对应动力蓄电池包个数")
+  let pack_counts : Array[Int32] = []
+  let mut total_packs = 0
+  for i in 0..<bms_count {
+    let count = bytes[LOGIN_FIXED_LEN + i].to_int()
+    check_count(count, 0, MAX_PACK_PER_BMS, field="BMS 对应动力蓄电池包个数")
+    pack_counts.push(count)
+    total_packs = total_packs + count
+  }
+  // 读取包编码：每包 24 字符
+  let codes_at = LOGIN_FIXED_LEN + bms_count
+  let need = codes_at + total_packs * PACK_CODE_LEN
+  if bytes.length() < need {
+    raise Payload(
+      message="包编码区需要 \{need} 字节，实际 \{bytes.length()}",
     )
   }
-  let iccid = decode_iccid(bytes[offset + 8:offset + 28])
-  let count = bytes[offset + 28].to_int()
-  check_count(count, 0, 250, field="可充电储能子系统数")
-  let code_len = bytes[offset + 29].to_int()
-  check_count(code_len, 0, 50, field="可充电储能系统编码长度")
-  let total = VEHICLE_LOGIN_MIN_LEN + count * code_len
-  ensure_at(bytes, offset, total, what="车辆登入子系统编码")
-  let codes : Array[String] = []
-  for i in 0..<count {
-    let start = offset + VEHICLE_LOGIN_MIN_LEN + i * code_len
-    let raw = bytes[start:start + code_len]
-    codes.push(@utf8.decode(raw) catch {
-      _ => raise Payload(message="子系统编码不是合法 UTF-8")
-    })
+  if bytes.length() > need {
+    raise BadLength(expected=need, actual=bytes.length())
   }
-  let login : VehicleLogin = {
-    time,
-    sequence,
-    iccid,
-    storage_codes: codes,
-    code_len,
+  let systems : Array[BatteryManagementSystem] = []
+  let mut cursor = codes_at
+  for i in 0..<bms_count {
+    let count = pack_counts[i]
+    let codes : Array[String] = []
+    for _ in 0..<count {
+      let raw = bytes[cursor:cursor + PACK_CODE_LEN]
+      codes.push(@utf8.decode(raw) catch {
+        _ => raise Payload(message="动力蓄电池包编码不是合法 UTF-8")
+      })
+      cursor = cursor + PACK_CODE_LEN
+    }
+    systems.push({ pack_count: count, pack_codes: codes })
   }
-  (login, total)
+  { time, sequence, iccid, systems }
 }
 
 ///|
-pub fn VehicleLogin::decode(bytes : BytesView) -> VehicleLogin raise FrameError {
-  let (login, consumed) = VehicleLogin::decode_at(bytes, 0)
-  expect_len(bytes.length(), consumed, what="车辆登入")
-  login
+/// 登入数据单元的总字节数（用于校核声明长度）。
+pub fn VehicleLogin::byte_len(self : VehicleLogin) -> Int32 {
+  let mut packs = 0
+  for system in self.systems {
+    packs = packs + system.pack_codes.length()
+  }
+  LOGIN_FIXED_LEN + self.systems.length() + packs * PACK_CODE_LEN
 }
 
 ///|
-/// 车辆登出数据单元（表 8）：登出时间(6) | 登出流水号(2)。
+/// 车辆登出数据单元（表 28）：登出时间(6) 登出流水号(2)，流水号与当次登入一致。
 pub(all) struct VehicleLogout {
   time : Time
   sequence : Int32
@@ -133,14 +175,11 @@ pub fn VehicleLogout::to_bytes(self : VehicleLogout) -> Bytes {
 ///|
 pub fn VehicleLogout::decode(bytes : BytesView) -> VehicleLogout raise FrameError {
   expect_len(bytes.length(), VEHICLE_LOGOUT_LEN, what="车辆登出")
-  {
-    time: Time::from_bytes(bytes[0:6]),
-    sequence: u16_be(bytes, 6),
-  }
+  { time: Time::from_bytes(bytes[0:6]), sequence: u16_be(bytes, 6) }
 }
 
 ///|
-/// 平台登入数据单元：登入时间(6) | 登入流水号(2) | 平台用户名(12) | 平台密码(20) | 加密规则(1)。
+/// 平台登入数据单元（表 29）：时间(6) 流水号(2) 用户名(12) 密码(20) 加密规则(1)。
 pub(all) struct PlatformLogin {
   time : Time
   sequence : Int32
@@ -192,7 +231,6 @@ pub fn PlatformLogin::to_bytes(self : PlatformLogin) -> Bytes raise FrameError {
 }
 
 ///|
-/// 心跳（0x07）数据单元为空；早期设备可能携带一段状态字，读到额外字节时保留为原始负载。
-pub fn heartbeat_payload() -> Bytes {
-  Bytes::new(0)
-}
+/// 平台登出数据单元（表 30）：登出时间(6) 流水号(2)，与表 28 同形。
+///|
+/// 平台登出数据单元（表 30）与车辆登出（表 28）同形，直接复用 `VehicleLogout::decode`。

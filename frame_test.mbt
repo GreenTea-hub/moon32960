@@ -1,7 +1,7 @@
 // frame_test.mbt
 ///|
 /// 2025 版登入命令包：起始符 $$(0x24 0x24)、命令 0x01、应答标志 0xFE、37 字节数据单元。
-const GOLDEN_LOGIN_HEX : String = "242401fe4c47574546344135364d463132333435360100251a0b19091e000001383938363036323031383030303132333435363701074241542d413031de"
+const GOLDEN_LOGIN_HEX : String = "242401fe4c47574546344135364d463132333435360100361a0b19091e000001383938363036323031383030303132333435363701014c4650424154323032353131323530303030303030303031ff"
 
 ///|
 /// 平台应答：应答标志 0x01，数据单元只保留 6 字节报文时间。
@@ -13,9 +13,13 @@ test "解码 2025 版登入命令包" {
   assert_eq(frame.version.name(), "GB/T 32960.3-2025")
   assert_eq(frame.command.name(), "vehicle-login")
   assert_eq(frame.vin, "LGWEF4A56MF123456")
-  assert_eq(frame.payload.length(), 37)
+  assert_eq(frame.payload.length(), 54)
   let login = @moon32960.VehicleLogin::decode(frame.payload[:])
   assert_eq(login.iccid, "89860620180001234567")
+  // 2025 表 6：电池管理系统数 + 每系统包个数 + 24 位包编码
+  assert_eq(login.systems.length(), 1)
+  assert_eq(login.systems[0].pack_count, 1)
+  assert_eq(login.systems[0].pack_codes[0], "LFPBAT202511250000000001")
 }
 
 ///|

@@ -11,8 +11,12 @@ fn login_frame(vin : String) -> @moon32960.Frame {
       time=sample_time(),
       sequence=1,
       iccid="89860620180001234567",
-      storage_codes=["BAT-A01"],
-      code_len=7,
+      systems=[
+        @moon32960.BatteryManagementSystem::{
+          pack_count: 1,
+          pack_codes: ["LFPBAT202511250000000001"],
+        },
+      ],
     )
     @moon32960.Frame::new(
       command=@moon32960.Command::VehicleLogin,

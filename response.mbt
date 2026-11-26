@@ -130,6 +130,15 @@ pub fn Command::is_terminal_uplink(self : Command) -> Bool {
 }
 
 ///|
+/// 下行命令（平台发给终端）：激活应答 0x0A、查询 0x80、设置 0x81、控制 0x82。
+pub fn Command::is_downlink(self : Command) -> Bool {
+  match self {
+    ActivateAck | Query | Setting | TerminalControl => true
+    _ => false
+  }
+}
+
+///|
 /// 平台间上行命令（正文表 3）：登入、实时、补发、登出、平台登入/登出、密钥交换。
 pub fn Command::is_platform_uplink(self : Command) -> Bool {
   match self {

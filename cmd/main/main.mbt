@@ -181,7 +181,13 @@ fn decode_uplink(frame : @moon32960.Frame) -> Unit raise {
       println("  登入时间    : \{login.time.to_display()}")
       println("  登入流水号  : \{login.sequence}")
       println("  ICCID       : \{login.iccid}")
-      println("  储能子系统  : \{login.storage_codes.length()} 个")
+      println("  电池管理系统: \{login.systems.length()} 个")
+      for i, system in login.systems {
+        println("    BMS \{i + 1} 管理 \{system.pack_count} 个包")
+        for code in system.pack_codes {
+          println("      包编码 \{code}")
+        }
+      }
     }
     @moon32960.Command::RealtimeReport | @moon32960.Command::ResendReport => {
       let telemetry = @moon32960.Telemetry::decode(frame.payload[:])
@@ -211,8 +217,12 @@ fn login_frame(vin : String) -> @moon32960.Frame raise {
     time=sample_time(),
     sequence=1,
     iccid="89860620180001234567",
-    storage_codes=["BAT-A01"],
-    code_len=7,
+    systems=[
+      @moon32960.BatteryManagementSystem::{
+        pack_count: 1,
+        pack_codes: ["LFPBAT202511250000000001"],
+      },
+    ],
   )
   @moon32960.Frame::new(
     command=@moon32960.Command::VehicleLogin,
@@ -374,6 +384,71 @@ fn case_platform() -> Unit raise {
 }
 
 ///|
+fn case_keyexchange() -> Unit raise {
+  section("案例六 · 密钥交换（命令 0x0B，表 31）")
+  let vin = "LGWEF4A56MF123456"
+
+  let real : @moon32960.KeyExchange = {
+    key_type: 0x03,
+    key: @moon32960.from_hex("000102030405060708090a0b0c0d0e0f"),
+    enable_from: sample_time(minute=30),
+    expire_at: try! @moon32960.Time::new(
+      year=2026,
+      month=12,
+      day=25,
+      hour=9,
+      minute=30,
+      second=0,
+    ),
+  }
+  let frame = @moon32960.Frame::new(
+    command=@moon32960.Command::KeyExchange,
+    response=@moon32960.Command,
+    vin~,
+    encryption=@moon32960.Encryption::Plain,
+    payload=real.to_bytes(),
+  )
+  println("  ① 终端发出命令包：\{frame.hex()}")
+  println("     密钥类型 0x0\{real.key_type}（\{real.key_type_name()}），密钥 \{real.key.length()} 字节")
+  println("     启用 \{real.enable_from.to_display()}，失效 \{real.expire_at.to_display()}")
+  let gateway = @moon32960.Gateway::new()
+  section("② 平台应答")
+  print_handled(gateway.handle(frame))
+  section("③ 外部配套责任")
+  println("  · 本项目负责：解析表 31 结构、校验类型与有效期、应答 0x01")
+  println("  · 部署方负责：把密钥装进密钥管理系统，按启用/失效时间切换")
+  println("  · 本项目不持有密钥内容，不以明文落库")
+}
+
+///|
+fn case_activate() -> Unit raise {
+  section("案例七 · 激活（命令 0x09，表 B.3 / 表 B.4）")
+  let activation : @moon32960.Activate = {
+    time: sample_time(),
+    chip_id: "CHIP012345678901",
+    public_key: @moon32960.from_hex("aabbccdd"),
+    vin: "LGWEF4A56MF123456",
+    signature: @moon32960.Signature::{
+      kind_raw: 0x01,
+      r: @moon32960.from_hex("1122"),
+      s: @moon32960.from_hex("3344"),
+    },
+  }
+  let frame = @moon32960.Frame::new(
+    command=@moon32960.Command::Activate,
+    response=@moon32960.Command,
+    vin="LGWEF4A56MF123456",
+    encryption=@moon32960.Encryption::Plain,
+    payload=activation.to_bytes(),
+  )
+  println("  ① 终端命令包：\{frame.hex()}")
+  println("     芯片 ID \{activation.chip_id}，公钥 \{activation.public_key.length()} 字节")
+  section("② 平台应答（命令 0x0A，数据单元表 B.4）")
+  print_handled(@moon32960.Gateway::new().handle(frame))
+  println("  · 激活应答不是普通 0x01/0x02，而是 0x0A 命令 + 激活状态 + 信息")
+}
+
+///|
 fn parse_key(text : String) -> @moon32960.KeyMaterial raise {
   let raw = @moon32960.from_hex(text)
   if raw.length() != 16 {
@@ -414,6 +489,8 @@ fn main raise {
     ["case", "report"] => case_report()
     ["case", "resend"] => case_resend()
     ["case", "platform"] => case_platform()
+    ["case", "keyexchange"] => case_keyexchange()
+    ["case", "activate"] => case_activate()
     _ => usage()
   }
 }

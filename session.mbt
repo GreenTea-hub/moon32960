@@ -20,7 +20,7 @@ pub const RESEND_WINDOW_SECONDS : Int32 = 7 * 24 * 3600
 pub(all) struct TerminalSession {
   vin : String
   mut iccid : String
-  mut storage_codes : Array[String]
+  mut systems : Array[BatteryManagementSystem]
   mut state : SessionState
   mut sequence : Int32
   mut report_count : Int32
@@ -35,7 +35,7 @@ pub fn TerminalSession::new(vin : String) -> TerminalSession raise FrameError {
   {
     vin,
     iccid: "",
-    storage_codes: [],
+    systems: [],
     state: SessionState::Idle,
     sequence: 0,
     report_count: 0,
@@ -51,7 +51,7 @@ pub fn TerminalSession::login(self : TerminalSession, login : VehicleLogin) -> U
   self.state = SessionState::Online
   self.sequence = login.sequence
   self.iccid = login.iccid
-  self.storage_codes = login.storage_codes
+  self.systems = login.systems
 }
 
 ///|

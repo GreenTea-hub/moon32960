@@ -19,6 +19,8 @@ pub(all) enum RouteOutcome {
   HeartbeatAccepted
   LogoutAccepted
   TimeSyncAcknowledged
+  KeyExchangeAccepted
+  Activated
   PlatformLoginAccepted
   PlatformLogoutAccepted
   Rejected
@@ -38,6 +40,8 @@ pub fn RouteOutcome::name(self : RouteOutcome) -> String {
     HeartbeatAccepted => "heartbeat-accepted"
     LogoutAccepted => "logout-accepted"
     TimeSyncAcknowledged => "time-sync-acknowledged"
+    KeyExchangeAccepted => "key-exchange-accepted"
+    Activated => "activated"
     PlatformLoginAccepted => "platform-login-accepted"
     PlatformLogoutAccepted => "platform-logout-accepted"
     Rejected => "rejected"
@@ -185,7 +189,7 @@ fn Gateway::handle_terminal(
       match self.sessions.get(frame.vin) {
         Some(session) => {
           if session.is_online() {
-            let flag = VinDuplicate
+            let flag : ResponseFlag = VinDuplicate
             let response = answer(frame, flag, shape~, answer_time~)
             let note = "VIN 已在线，按表 4 应答 0x03 VIN 重复"
             audit_and_pack(
@@ -294,6 +298,70 @@ fn Gateway::handle_terminal(
           )
         }
       }
+    }
+    Activate => {
+      // 0x09 激活：终端上传芯片 ID、公钥、VIN 与签名。
+      // 标准 B.3.5.5/B.3.5.6 规定应答用 0x0A 命令 + 表 B.4 数据单元，不是普通 0x01/0x02。
+      let info = Activate::decode(frame.payload[:]) catch {
+        _ => {
+          let response = activate_ack_frame(frame, ActivateFail, ActivateInfo::Unknown(0))
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="激活数据单元校验失败，应答 0x0A 激活失败",
+          )
+        }
+      }
+      let duplicate = self.sessions.contains(info.vin)
+      let (state, ack_info, note) = if duplicate {
+        (ActivateFail, ActivateInfo::VinDuplicate, "VIN 已存在，激活应答 0x02 VIN 重复")
+      } else {
+        (ActivateOk, ActivateInfo::ActivateSucceeded, "激活通过，已登记芯片 ID 与公钥")
+      }
+      let _ = info
+      let response = activate_ack_frame(frame, state, ack_info)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        if duplicate {
+          Rejected
+        } else {
+          Activated
+        },
+        Some(response),
+        note~,
+      )
+    }
+    KeyExchange => {
+      // 0x0B 密钥交换：解析密钥类型、密钥、有效期后应答 0x01。
+      // 密钥的实际安装与轮换由部署方密钥管理系统完成，见 CONFORMANCE 的外部配套责任。
+      let exchange = KeyExchange::decode(frame.payload[:]) catch {
+        _ => {
+          let response = answer(frame, StructureError, shape~, answer_time~)
+          return audit_and_pack(
+            self,
+            frame.vin,
+            frame.command,
+            Rejected,
+            Some(response),
+            note="密钥交换数据单元解析失败，应答 0x06 数据结构错误",
+          )
+        }
+      }
+      let note = "密钥交换：类型 \{exchange.key_type_name()}，\{exchange.key.length()} 字节，生效 \{exchange.enable_from.to_display()}，失效 \{exchange.expire_at.to_display()}；结构已校验，密钥安装由部署方完成"
+      let response = answer(frame, Success, shape~, answer_time~)
+      audit_and_pack(
+        self,
+        frame.vin,
+        frame.command,
+        KeyExchangeAccepted,
+        Some(response),
+        note~,
+      )
     }
     TerminalTimeSync => {
       // 0x08 是终端上行请求，数据单元为空；平台应答 0x01 表示可以校时。

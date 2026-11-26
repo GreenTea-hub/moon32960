@@ -2,6 +2,8 @@
 package "GreenTea-hub/moon32960"
 
 // Values
+pub const ACTIVATE_MIN_LEN : Int32 = 41
+
 pub const ALARM_MIN_LEN : Int32 = 10
 
 pub const DRIVE_MOTOR_LEN : Int32 = 10
@@ -16,7 +18,15 @@ pub const ICCID_LEN : Int32 = 20
 
 pub const LOCATION_LEN : Int32 = 10
 
+pub const LOGIN_FIXED_LEN : Int32 = 29
+
+pub const MAX_BMS_COUNT : Int32 = 20
+
+pub const MAX_PACK_PER_BMS : Int32 = 50
+
 pub const MIN_FRAME_LEN : Int32 = 25
+
+pub const PACK_CODE_LEN : Int32 = 24
 
 pub const PLATFORM_LOGIN_LEN : Int32 = 41
 
@@ -24,13 +34,13 @@ pub const RESEND_WINDOW_SECONDS : Int32 = 604800
 
 pub const SUPERCAP_EXTREME_LEN : Int32 = 18
 
-pub const VEHICLE_LOGIN_MIN_LEN : Int32 = 30
-
 pub const VEHICLE_LOGOUT_LEN : Int32 = 8
 
 pub const VIN_LEN : Int32 = 17
 
 pub const WHOLE_VEHICLE_LEN : Int32 = 18
+
+pub fn activate_ack_frame(Frame, ActivateState, ActivateInfo) -> Frame
 
 pub fn aes128_cbc_decrypt(Bytes, Bytes, Bytes) -> Bytes raise FrameError
 
@@ -82,9 +92,9 @@ pub fn expect_len(Int32, Int32, what~ : String) -> Unit raise FrameError
 
 pub fn from_hex(String) -> Bytes raise FrameError
 
-pub fn heartbeat_payload() -> Bytes
-
 pub fn is_response_packet(Frame) -> Bool
+
+pub fn param_len(Int32) -> Int32?
 
 pub fn peek_header(Bytes) -> FrameHeader raise FrameError
 
@@ -134,6 +144,39 @@ pub(all) suberror FrameError {
 }
 
 // Types and methods
+pub(all) struct Activate {
+  time : Time
+  chip_id : String
+  public_key : Bytes
+  vin : String
+  signature : Signature
+}
+pub fn Activate::decode(BytesView) -> Self raise FrameError
+pub fn Activate::to_bytes(Self) -> Bytes raise FrameError
+
+pub(all) struct ActivateAck {
+  state : ActivateState
+  info : ActivateInfo
+}
+pub fn ActivateAck::decode(BytesView) -> Self raise FrameError
+pub fn ActivateAck::to_bytes(Self) -> Bytes
+
+pub(all) enum ActivateInfo {
+  ActivateSucceeded
+  ChipAlreadyActivated
+  VinDuplicate
+  Unknown(Int32)
+}
+pub fn ActivateInfo::from_byte(Int32) -> Self
+pub fn ActivateInfo::to_byte(Self) -> Byte
+
+pub(all) enum ActivateState {
+  ActivateOk
+  ActivateFail
+  Unknown(Int32)
+}
+pub fn ActivateState::from_byte(Int32) -> Self
+
 pub(all) struct Alarm {
   level_raw : Int32
   general_flags_raw : Int32
@@ -161,6 +204,11 @@ pub(all) struct BatteryCellVoltage {
 }
 pub fn BatteryCellVoltage::decode_at(BytesView, Int32, Int32) -> (Self, Int32) raise FrameError
 pub fn BatteryCellVoltage::to_bytes(Self) -> Bytes
+
+pub(all) struct BatteryManagementSystem {
+  pack_count : Int32
+  pack_codes : Array[String]
+}
 
 pub(all) struct BatteryPackTemperature {
   pack_no : Int32
@@ -200,6 +248,7 @@ pub(all) enum Command {
   Unknown(Int32)
 }
 pub fn Command::from_byte(Byte) -> Self
+pub fn Command::is_downlink(Self) -> Bool
 pub fn Command::is_platform_uplink(Self) -> Bool
 pub fn Command::is_terminal_uplink(Self) -> Bool
 pub fn Command::name(Self) -> String
@@ -351,12 +400,41 @@ pub fn InfoType::from_byte(Byte) -> Self
 pub fn InfoType::name(Self) -> String
 pub fn InfoType::to_byte(Self) -> Byte
 
+pub(all) struct KeyExchange {
+  key_type : Int32
+  key : Bytes
+  enable_from : Time
+  expire_at : Time
+}
+pub fn KeyExchange::decode(BytesView) -> Self raise FrameError
+pub fn KeyExchange::key_type_name(Self) -> String
+pub fn KeyExchange::to_bytes(Self) -> Bytes
+
 pub(all) enum KeyMaterial {
   NoKey
   Aes128Ecb(key~ : Bytes)
   Aes128Cbc(key~ : Bytes, iv~ : Bytes)
 }
 pub fn KeyMaterial::describe(Self) -> String
+
+pub(all) struct ParamItem {
+  id : Int32
+  value : Bytes
+}
+
+pub(all) struct ParamQuery {
+  time : Time
+  ids : Array[Int32]
+}
+pub fn ParamQuery::decode(BytesView) -> Self raise FrameError
+pub fn ParamQuery::to_bytes(Self) -> Bytes
+
+pub(all) struct ParamSetting {
+  time : Time
+  items : Array[ParamItem]
+}
+pub fn ParamSetting::decode(BytesView) -> Self raise FrameError
+pub fn ParamSetting::to_bytes(Self) -> Bytes
 
 pub(all) struct PlatformLogin {
   time : Time
@@ -421,6 +499,8 @@ pub(all) enum RouteOutcome {
   HeartbeatAccepted
   LogoutAccepted
   TimeSyncAcknowledged
+  KeyExchangeAccepted
+  Activated
   PlatformLoginAccepted
   PlatformLogoutAccepted
   Rejected
@@ -487,10 +567,19 @@ pub fn Telemetry::new(time~ : Time, items~ : Array[ReportItem]) -> Self
 pub fn Telemetry::to_bytes(Self) -> Bytes raise FrameError
 pub fn Telemetry::with_signature(Self, signature~ : Signature) -> Self
 
+pub(all) struct TerminalControl {
+  time : Time
+  command_id : Int32
+  params : Bytes
+}
+pub fn TerminalControl::command_name(Self) -> String
+pub fn TerminalControl::decode(BytesView) -> Self raise FrameError
+pub fn TerminalControl::to_bytes(Self) -> Bytes
+
 pub(all) struct TerminalSession {
   vin : String
   mut iccid : String
-  mut storage_codes : Array[String]
+  mut systems : Array[BatteryManagementSystem]
   mut state : SessionState
   mut sequence : Int32
   mut report_count : Int32
@@ -537,12 +626,11 @@ pub(all) struct VehicleLogin {
   time : Time
   sequence : Int32
   iccid : String
-  storage_codes : Array[String]
-  code_len : Int32
+  systems : Array[BatteryManagementSystem]
 }
+pub fn VehicleLogin::byte_len(Self) -> Int32
 pub fn VehicleLogin::decode(BytesView) -> Self raise FrameError
-pub fn VehicleLogin::decode_at(BytesView, Int32) -> (Self, Int32) raise FrameError
-pub fn VehicleLogin::new(time~ : Time, sequence~ : Int32, iccid~ : String, storage_codes~ : Array[String], code_len~ : Int32) -> Self raise FrameError
+pub fn VehicleLogin::new(time~ : Time, sequence~ : Int32, iccid~ : String, systems~ : Array[BatteryManagementSystem]) -> Self raise FrameError
 pub fn VehicleLogin::to_bytes(Self) -> Bytes raise FrameError
 
 pub(all) struct VehicleLogout {
