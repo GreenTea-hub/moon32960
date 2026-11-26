@@ -574,7 +574,8 @@ pub fn Gateway::handle_bytes(
   self : Gateway,
   data : Bytes,
   scope~ : Scope = TerminalToPlatform,
-  shape~ : ResponseShape = KeepRequestPayload,
+  // 与 handle 一致：2025 版应答只保留报文时间
+  shape~ : ResponseShape = TimeOnly,
   answer_time~ : Time? = None,
   key~ : KeyMaterial = NoKey,
 ) -> Handled {
@@ -591,8 +592,8 @@ pub fn Gateway::handle_bytes(
   }
   let frame = decode_frame(data, key~) catch {
     _ => {
-      // 应答要按「其余报文内容一致」保持原加密方式；拿不到密钥就无法加密应答，
-      // 此时只能记录、不应答，而不是给出一个不加密的应答冒充合规。
+      // 应答要沿用请求的加密方式（6.3.2 只保留报文时间，加密方式不变）；
+      // 拿不到密钥就无法产出合规应答，此时只记录、不应答，而不是发一个明文应答冒充合规。
       let can_answer = match header.encryption {
         Plain => true
         _ => false
