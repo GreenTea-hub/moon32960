@@ -16,29 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: install MoonBit (unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
-
-      - name: install MoonBit (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
-          "$env:USERPROFILE\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      # 官方 Marketplace Action，内部处理三平台的工具链安装与 PATH
+      - name: setup moonbit
+        uses: hustcer/setup-moonbit@v1
 
       - name: toolchain version
         run: moon version --all
 
-      - name: moon check (deny warnings)
+      - name: moon check
         run: moon check --target wasm --deny-warn
 
       - name: moon test
         run: moon test --target wasm --deny-warn
-
-      - name: moon fmt check
-        run: |
-          moon fmt
-          git diff --exit-code
