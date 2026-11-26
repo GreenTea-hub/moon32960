@@ -79,7 +79,7 @@ pub fn build_response(
         Some(time) => replace_time(request.payload, time)
         None => request.payload
       }
-    EmptyPayload => Bytes::new(0)
+    EmptyPayload => Bytes::make(0, b'\x00')
   }
   {
     version: request.version,

@@ -155,7 +155,7 @@ test "终端校时是上行，应答 0x01" {
     response=@moon32960.Command,
     vin="LGWEF4A56MF123456",
     encryption=@moon32960.Encryption::Plain,
-    payload=Bytes::new(0),
+    payload=Bytes::make(0, b'\x00'),
   )
   let handled = gateway.handle(frame)
   assert_eq(handled.outcome.name(), "time-sync-acknowledged")
@@ -170,7 +170,7 @@ test "平台下行命令在平台侧方向不符" {
     response=@moon32960.Command,
     vin="LGWEF4A56MF123456",
     encryption=@moon32960.Encryption::Plain,
-    payload=Bytes::new(0),
+    payload=Bytes::make(0, b'\x00'),
   )
   let handled = gateway.handle(frame)
   assert_eq(handled.outcome.name(), "conflicting-direction")

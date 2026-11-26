@@ -451,7 +451,7 @@ fn case_platform() -> Unit raise {
     response=@moon32960.Command,
     vin="LGWEF4A56MF123456",
     encryption=@moon32960.Encryption::Plain,
-    payload=Bytes::new(0),
+    payload=Bytes::make(0, b'\x00'),
   )
   print_handled(@moon32960.Gateway::new().handle(time_sync))
 }

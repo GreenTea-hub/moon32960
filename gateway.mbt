@@ -603,7 +603,7 @@ pub fn Gateway::handle_bytes(
           response=header.response,
           vin=header.vin,
           encryption=header.encryption,
-          payload=Bytes::new(0),
+          payload=Bytes::make(0, b'\x00'),
         )
         Some(answer(placeholder, OtherError, shape~, answer_time~))
       } else {

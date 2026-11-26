@@ -87,7 +87,7 @@ test "非 VIN 识别码的帧可正常编解码" {
     response: @moon32960.Command,
     vin: "CUSTOM-CODE-0001!",
     encryption: @moon32960.Encryption::Plain,
-    payload: Bytes::new(0),
+    payload: Bytes::make(0, b'\x00'),
   }
   let wire = try! frame.hex()
   let decoded = try! @moon32960.decode_frame(@moon32960.from_hex(wire))

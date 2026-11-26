@@ -157,7 +157,7 @@ test "车载终端控制按表B.10" {
   let control : @moon32960.TerminalControl = {
     time: t025(),
     command_id: 0x02,
-    params: Bytes::new(0),
+    params: Bytes::make(0, b'\x00'),
   }
   let bytes = control.to_bytes()
   assert_eq(bytes.length(), 7)
