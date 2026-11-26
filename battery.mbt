@@ -48,7 +48,9 @@ pub fn BatteryCellVoltage::decode_at(
     }
     let need = 7 + m * 2
     if cursor + need > end {
-      raise Payload(message="蓄电池电压: 单元数 \{m} 超出剩余字节")
+      raise Payload(
+        message="蓄电池电压: 单元数 \{m} 超出剩余字节",
+      )
     }
     let voltages : Array[Int32] = []
     for i in 0..<m {
@@ -63,7 +65,7 @@ pub fn BatteryCellVoltage::decode_at(
     })
     cursor = cursor + need
   }
-  ({ packs }, cursor - offset)
+  ({ packs, }, cursor - offset)
 }
 
 ///|
@@ -136,7 +138,9 @@ pub fn BatteryTemperature::decode_at(
     }
     let need = 3 + m
     if cursor + need > end {
-      raise Payload(message="蓄电池温度: 探针数 \{m} 超出剩余字节")
+      raise Payload(
+        message="蓄电池温度: 探针数 \{m} 超出剩余字节",
+      )
     }
     let temps : Array[Int32] = []
     for i in 0..<m {
@@ -149,7 +153,7 @@ pub fn BatteryTemperature::decode_at(
     })
     cursor = cursor + need
   }
-  ({ packs }, cursor - offset)
+  ({ packs, }, cursor - offset)
 }
 
 ///|

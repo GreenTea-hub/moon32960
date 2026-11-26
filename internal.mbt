@@ -1,4 +1,5 @@
 // internal.mbt
+
 ///|
 /// 字段取值状态。GB/T 32960.3 用固定码表示异常与无效，解读时不应报错，而应标记。
 pub(all) enum FieldState {
@@ -101,8 +102,6 @@ pub fn expect_len(
   what~ : String,
 ) -> Unit raise FrameError {
   if actual != expected {
-    raise Payload(
-      message="\{what}: expected \{expected} bytes, got \{actual}",
-    )
+    raise Payload(message="\{what}: expected \{expected} bytes, got \{actual}")
   }
 }

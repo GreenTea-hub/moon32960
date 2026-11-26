@@ -1,4 +1,5 @@
 // payload_test.mbt
+
 ///|
 fn sample_vehicle() -> @moon32960.WholeVehicle {
   {
@@ -37,10 +38,14 @@ test "驱动电机每项 10 字节，转矩为 DWORD" {
     torque_raw: 220000,
     motor_temp_raw: 55,
   }
-  let data : @moon32960.DriveMotorData = { count_raw: 1, motors: [motor] }
+  let data : @moon32960.DriveMotorData = { count_raw: 1, motors: [motor], }
   let bytes = data.to_bytes()
   assert_eq(bytes.length(), 11)
-  let (decoded, used) = @moon32960.DriveMotorData::decode_at(bytes[:], 0, bytes.length())
+  let (decoded, used) = @moon32960.DriveMotorData::decode_at(
+    bytes[:],
+    0,
+    bytes.length(),
+  )
   assert_eq(used, 11)
   assert_eq(decoded.motors[0].speed_rpm().unwrap(), 4000)
   assert_eq(decoded.motors[0].torque_nm().unwrap(), 2000.0)
@@ -63,7 +68,7 @@ test "位置数据 10 字节含坐标系" {
 
 ///|
 test "发动机数据只有曲轴转速 2 字节" {
-  let engine : @moon32960.Engine = { crankshaft_speed_raw: 2000 }
+  let engine : @moon32960.Engine = { crankshaft_speed_raw: 2000, }
   let bytes = engine.to_bytes()
   assert_eq(bytes.length(), 2)
   assert_eq(@moon32960.Engine::decode(bytes[:]).crankshaft_speed_raw, 2000)
@@ -96,9 +101,13 @@ test "蓄电池最小并联单元电压" {
     cell_count: 2,
     cell_voltages_raw: [3300, 3250],
   }
-  let data : @moon32960.BatteryCellVoltage = { packs: [pack] }
+  let data : @moon32960.BatteryCellVoltage = { packs: [pack], }
   let bytes = data.to_bytes()
-  let (decoded, used) = @moon32960.BatteryCellVoltage::decode_at(bytes[:], 0, bytes.length())
+  let (decoded, used) = @moon32960.BatteryCellVoltage::decode_at(
+    bytes[:],
+    0,
+    bytes.length(),
+  )
   assert_eq(used, bytes.length())
   assert_eq(decoded.packs[0].cell_voltages_raw.length(), 2)
   assert_eq(decoded.packs[0].cell_voltages_raw[0], 3300)
@@ -111,9 +120,13 @@ test "蓄电池温度探针" {
     probe_count: 3,
     probe_temps_raw: [80, 85, 90],
   }
-  let data : @moon32960.BatteryTemperature = { packs: [pack] }
+  let data : @moon32960.BatteryTemperature = { packs: [pack], }
   let bytes = data.to_bytes()
-  let (decoded, used) = @moon32960.BatteryTemperature::decode_at(bytes[:], 0, bytes.length())
+  let (decoded, used) = @moon32960.BatteryTemperature::decode_at(
+    bytes[:],
+    0,
+    bytes.length(),
+  )
   assert_eq(used, bytes.length())
   assert_eq(decoded.packs[0].probe_temps_raw.length(), 3)
   assert_eq(@moon32960.probe_temperature(90).unwrap(), 50)
@@ -129,7 +142,11 @@ test "超级电容器与极值数据" {
     probe_temps_raw: [70, 75],
   }
   let bytes = cap.to_bytes()
-  let (decoded, used) = @moon32960.SuperCapacitor::decode_at(bytes[:], 0, bytes.length())
+  let (decoded, used) = @moon32960.SuperCapacitor::decode_at(
+    bytes[:],
+    0,
+    bytes.length(),
+  )
   assert_eq(used, bytes.length())
   assert_eq(decoded.cell_voltages_raw.length(), 2)
   let extreme : @moon32960.SuperCapacitorExtreme = {
@@ -165,28 +182,36 @@ test "电堆与自定义数据" {
     air_inlet_temp_raw: 60,
     cooling_temps_raw: [75, 76],
   }
-  let data : @moon32960.FuelCellStackData = { count_raw: 1, stacks: [unit] }
+  let data : @moon32960.FuelCellStackData = { count_raw: 1, stacks: [unit], }
   let bytes = data.to_bytes()
-  let (decoded, used) = @moon32960.FuelCellStackData::decode_at(bytes[:], 0, bytes.length())
+  let (decoded, used) = @moon32960.FuelCellStackData::decode_at(
+    bytes[:],
+    0,
+    bytes.length(),
+  )
   assert_eq(used, bytes.length())
   assert_eq(decoded.stacks[0].cooling_temps_raw.length(), 2)
 }
 
 ///|
 test "实时上报容器与签名信息" {
-  let time = try! @moon32960.Time::new(year=2026, month=11, day=25, hour=9, minute=30, second=0)
-  let telemetry = @moon32960.Telemetry::new(
-    time~,
-    items=[
-      @moon32960.ReportItem::Vehicle(sample_vehicle()),
-      @moon32960.ReportItem::Location({
-        position_status: 0x00,
-        coordinate_system: 0x02,
-        longitude_raw: 116397000,
-        latitude_raw: 39909000,
-      }),
-    ],
+  let time = try! @moon32960.Time::new(
+    year=2026,
+    month=11,
+    day=25,
+    hour=9,
+    minute=30,
+    second=0,
   )
+  let telemetry = @moon32960.Telemetry::new(time~, items=[
+    @moon32960.ReportItem::Vehicle(sample_vehicle()),
+    @moon32960.ReportItem::Location({
+      position_status: 0x00,
+      coordinate_system: 0x02,
+      longitude_raw: 116397000,
+      latitude_raw: 39909000,
+    }),
+  ])
   let sig : @moon32960.Signature = {
     kind_raw: 0x01,
     r: @moon32960.from_hex("aabb"),

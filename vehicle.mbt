@@ -148,12 +148,12 @@ pub fn WholeVehicle::gear_valid(self : WholeVehicle) -> Bool {
 
 ///|
 pub fn WholeVehicle::gear_has_drive_force(self : WholeVehicle) -> Bool {
-  (self.gear / 2) % 2 == 1
+  self.gear / 2 % 2 == 1
 }
 
 ///|
 pub fn WholeVehicle::gear_has_brake_force(self : WholeVehicle) -> Bool {
-  (self.gear / 4) % 2 == 1
+  self.gear / 4 % 2 == 1
 }
 
 ///|

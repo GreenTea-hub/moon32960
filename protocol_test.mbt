@@ -1,7 +1,15 @@
 // protocol_test.mbt
+
 ///|
 fn t025(hour~ : Int32 = 9, minute~ : Int32 = 30) -> @moon32960.Time {
-  try! @moon32960.Time::new(year=2026, month=11, day=25, hour~, minute~, second=0)
+  try! @moon32960.Time::new(
+    year=2026,
+    month=11,
+    day=25,
+    hour~,
+    minute~,
+    second=0,
+  )
 }
 
 ///|
@@ -15,7 +23,7 @@ test "登入数据单元按表6：BMS 数 + 包个数 + 24 位编码" {
         pack_count: 2,
         pack_codes: ["LFPBAT202511250000000001", "LFPBAT202511250000000002"],
       },
-      @moon32960.BatteryManagementSystem::{ pack_count: 0, pack_codes: [] },
+      @moon32960.BatteryManagementSystem::{ pack_count: 0, pack_codes: [], },
     ],
   )
   let bytes = login.to_bytes()
@@ -122,7 +130,7 @@ test "激活应答按表B.4" {
 
 ///|
 test "参数查询按表B.5" {
-  let query : @moon32960.ParamQuery = { time: t025(), ids: [0x02, 0x06] }
+  let query : @moon32960.ParamQuery = { time: t025(), ids: [0x02, 0x06], }
   let bytes = query.to_bytes()
   assert_eq(bytes.length(), 9)
   let decoded = @moon32960.ParamQuery::decode(bytes[:])
@@ -134,8 +142,8 @@ test "参数设置按表B.9" {
   let setting : @moon32960.ParamSetting = {
     time: t025(),
     items: [
-      @moon32960.ParamItem::{ id: 0x02, value: @moon32960.from_hex("10") },
-      @moon32960.ParamItem::{ id: 0x01, value: @moon32960.from_hex("1f40") },
+      @moon32960.ParamItem::{ id: 0x02, value: @moon32960.from_hex("10"), },
+      @moon32960.ParamItem::{ id: 0x01, value: @moon32960.from_hex("1f40"), },
     ],
   }
   let bytes = setting.to_bytes()

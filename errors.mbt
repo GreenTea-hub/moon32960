@@ -1,4 +1,5 @@
 // errors.mbt
+
 ///|
 /// Errors raised while decoding or encoding GB/T 32960.3-2016 frames.
 ///

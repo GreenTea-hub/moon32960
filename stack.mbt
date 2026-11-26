@@ -43,14 +43,21 @@ pub fn FuelCellStackData::decode_at(
     let probe_count_raw = u16_be(bytes, cursor + 10)
     let m = match FieldState::word(probe_count_raw) {
       Valid => {
-        check_count(probe_count_raw, 0, 65531, field="冷却水出水口温度探针总数")
+        check_count(
+          probe_count_raw,
+          0,
+          65531,
+          field="冷却水出水口温度探针总数",
+        )
         probe_count_raw
       }
       _ => 0
     }
     let need = 12 + m
     if cursor + need > end {
-      raise Payload(message="燃料电池电堆: 探针数 \{m} 超出剩余字节")
+      raise Payload(
+        message="燃料电池电堆: 探针数 \{m} 超出剩余字节",
+      )
     }
     let temps : Array[Int32] = []
     for i in 0..<m {
@@ -67,7 +74,7 @@ pub fn FuelCellStackData::decode_at(
     })
     cursor = cursor + need
   }
-  ({ count_raw, stacks }, cursor - offset)
+  ({ count_raw, stacks, }, cursor - offset)
 }
 
 ///|

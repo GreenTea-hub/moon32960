@@ -50,11 +50,21 @@ pub fn VehicleLogin::new(
 ) -> VehicleLogin raise FrameError {
   // 表 6：流水号 1~65531，逐次加一，跨天归零
   if sequence < 1 || sequence > 65531 {
-    raise FieldOutOfRange(field="登入流水号", value=sequence, low=1, high=65531)
+    raise FieldOutOfRange(
+      field="登入流水号",
+      value=sequence,
+      low=1,
+      high=65531,
+    )
   }
   check_count(systems.length(), 0, MAX_BMS_COUNT, field="电池管理系统数")
   for system in systems {
-    check_count(system.pack_count, 0, MAX_PACK_PER_BMS, field="BMS 对应动力蓄电池包个数")
+    check_count(
+      system.pack_count,
+      0,
+      MAX_PACK_PER_BMS,
+      field="BMS 对应动力蓄电池包个数",
+    )
     if system.pack_codes.length() != system.pack_count {
       raise Payload(
         message="包个数 \{system.pack_count} 与编码条数 \{system.pack_codes.length()} 不一致",
@@ -62,11 +72,13 @@ pub fn VehicleLogin::new(
     }
     for code in system.pack_codes {
       if code.length() != PACK_CODE_LEN {
-        raise Payload(message="动力蓄电池包编码应为 \{PACK_CODE_LEN} 字符，实际 \{code.length()}")
+        raise Payload(
+          message="动力蓄电池包编码应为 \{PACK_CODE_LEN} 字符，实际 \{code.length()}",
+        )
       }
     }
   }
-  { time, sequence, iccid, systems }
+  { time, sequence, iccid, systems, }
 }
 
 ///|
@@ -99,18 +111,33 @@ pub fn VehicleLogin::decode(bytes : BytesView) -> VehicleLogin raise FrameError 
   let time = Time::from_bytes(bytes[0:6])
   let sequence = u16_be(bytes, 6)
   if sequence < 1 || sequence > 65531 {
-    raise FieldOutOfRange(field="登入流水号", value=sequence, low=1, high=65531)
+    raise FieldOutOfRange(
+      field="登入流水号",
+      value=sequence,
+      low=1,
+      high=65531,
+    )
   }
   let iccid = decode_iccid(bytes[8:28])
   let bms_count = bytes[28].to_int()
   check_count(bms_count, 0, MAX_BMS_COUNT, field="电池管理系统数")
   // 读取各 BMS 的包个数
-  ensure_at(bytes, LOGIN_FIXED_LEN, bms_count, what="BMS 对应动力蓄电池包个数")
+  ensure_at(
+    bytes,
+    LOGIN_FIXED_LEN,
+    bms_count,
+    what="BMS 对应动力蓄电池包个数",
+  )
   let pack_counts : Array[Int32] = []
   let mut total_packs = 0
   for i in 0..<bms_count {
     let count = bytes[LOGIN_FIXED_LEN + i].to_int()
-    check_count(count, 0, MAX_PACK_PER_BMS, field="BMS 对应动力蓄电池包个数")
+    check_count(
+      count,
+      0,
+      MAX_PACK_PER_BMS,
+      field="BMS 对应动力蓄电池包个数",
+    )
     pack_counts.push(count)
     total_packs = total_packs + count
   }
@@ -132,14 +159,17 @@ pub fn VehicleLogin::decode(bytes : BytesView) -> VehicleLogin raise FrameError 
     let codes : Array[String] = []
     for _ in 0..<count {
       let raw = bytes[cursor:cursor + PACK_CODE_LEN]
-      codes.push(@utf8.decode(raw) catch {
-        _ => raise Payload(message="动力蓄电池包编码不是合法 UTF-8")
-      })
+      codes.push(
+        @utf8.decode(raw) catch {
+          _ =>
+            raise Payload(message="动力蓄电池包编码不是合法 UTF-8")
+        },
+      )
       cursor = cursor + PACK_CODE_LEN
     }
-    systems.push({ pack_count: count, pack_codes: codes })
+    systems.push({ pack_count: count, pack_codes: codes, })
   }
-  { time, sequence, iccid, systems }
+  { time, sequence, iccid, systems, }
 }
 
 ///|
@@ -173,9 +203,11 @@ pub fn VehicleLogout::to_bytes(self : VehicleLogout) -> Bytes {
 }
 
 ///|
-pub fn VehicleLogout::decode(bytes : BytesView) -> VehicleLogout raise FrameError {
+pub fn VehicleLogout::decode(
+  bytes : BytesView,
+) -> VehicleLogout raise FrameError {
   expect_len(bytes.length(), VEHICLE_LOGOUT_LEN, what="车辆登出")
-  { time: Time::from_bytes(bytes[0:6]), sequence: u16_be(bytes, 6) }
+  { time: Time::from_bytes(bytes[0:6]), sequence: u16_be(bytes, 6), }
 }
 
 ///|
@@ -192,7 +224,9 @@ pub(all) struct PlatformLogin {
 pub const PLATFORM_LOGIN_LEN : Int32 = 41
 
 ///|
-pub fn PlatformLogin::decode(bytes : BytesView) -> PlatformLogin raise FrameError {
+pub fn PlatformLogin::decode(
+  bytes : BytesView,
+) -> PlatformLogin raise FrameError {
   expect_len(bytes.length(), PLATFORM_LOGIN_LEN, what="平台登入")
   let username = @utf8.decode(bytes[8:20]) catch {
     _ => raise Payload(message="平台用户名不是合法 UTF-8")
@@ -232,5 +266,6 @@ pub fn PlatformLogin::to_bytes(self : PlatformLogin) -> Bytes raise FrameError {
 
 ///|
 /// 平台登出数据单元（表 30）：登出时间(6) 流水号(2)，与表 28 同形。
+
 ///|
 /// 平台登出数据单元（表 30）与车辆登出（表 28）同形，直接复用 `VehicleLogout::decode`。

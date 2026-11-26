@@ -1,4 +1,5 @@
 // codec.mbt
+
 ///|
 /// 大端（网络字节序）读取：GB/T 32960.3 的字（WORD）与双字（DWORD）均以大端传递。
 pub fn u16_be(bytes : BytesView, offset : Int32) -> Int32 {
@@ -22,8 +23,8 @@ pub fn push_u16_be(out : Array[Byte], value : Int32) -> Unit {
 ///|
 pub fn push_u32_be(out : Array[Byte], value : Int32) -> Unit {
   out.push((value / 16777216).to_byte())
-  out.push(((value / 65536) % 256).to_byte())
-  out.push(((value / 256) % 256).to_byte())
+  out.push((value / 65536 % 256).to_byte())
+  out.push((value / 256 % 256).to_byte())
   out.push((value % 256).to_byte())
 }
 
@@ -153,11 +154,9 @@ pub fn Time::new(
     !in_range(hour, 0, 23) ||
     !in_range(minute, 0, 59) ||
     !in_range(second, 0, 59) {
-    raise BadTime(
-      bytes="\{year}-\{month}-\{day} \{hour}:\{minute}:\{second}",
-    )
+    raise BadTime(bytes="\{year}-\{month}-\{day} \{hour}:\{minute}:\{second}")
   }
-  { year, month, day, hour, minute, second }
+  { year, month, day, hour, minute, second, }
 }
 
 ///|

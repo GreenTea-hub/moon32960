@@ -1,12 +1,24 @@
 // gateway_test.mbt
+
 ///|
-fn sample_time(hour~ : Int32 = 9, minute~ : Int32 = 30, second~ : Int32 = 0) -> @moon32960.Time {
-  try! @moon32960.Time::new(year=2026, month=11, day=25, hour~, minute~, second~)
+fn sample_time(
+  hour~ : Int32 = 9,
+  minute~ : Int32 = 30,
+  second~ : Int32 = 0,
+) -> @moon32960.Time {
+  try! @moon32960.Time::new(
+    year=2026,
+    month=11,
+    day=25,
+    hour~,
+    minute~,
+    second~,
+  )
 }
 
 ///|
 fn login_frame(vin : String) -> @moon32960.Frame {
-  try! {
+  try! ({
     let login = @moon32960.VehicleLogin::new(
       time=sample_time(),
       sequence=1,
@@ -25,7 +37,7 @@ fn login_frame(vin : String) -> @moon32960.Frame {
       encryption=@moon32960.Encryption::Plain,
       payload=login.to_bytes(),
     )
-  }
+  })
 }
 
 ///|
@@ -43,16 +55,17 @@ fn telemetry_payload(minute~ : Int32) -> Bytes {
     gear: 0x04,
     insulation_raw: 1200,
   }
-  try! {
-    @moon32960.Telemetry::new(
-      time=sample_time(minute~),
-      items=[@moon32960.ReportItem::Vehicle(vehicle)],
-    ).to_bytes()
-  }
+  @moon32960.Telemetry::new(time=sample_time(minute~), items=[
+    @moon32960.ReportItem::Vehicle(vehicle),
+  ]).to_bytes()
 }
 
 ///|
-fn report_frame(vin : String, command~ : @moon32960.Command, minute~ : Int32) -> @moon32960.Frame {
+fn report_frame(
+  vin : String,
+  command~ : @moon32960.Command,
+  minute~ : Int32,
+) -> @moon32960.Frame {
   @moon32960.Frame::new(
     command~,
     response=@moon32960.Command,
@@ -67,8 +80,10 @@ fn flag_of(handled : @moon32960.Handled) -> @moon32960.ResponseFlag? {
   match handled.response {
     Some(response) =>
       match response.response {
-        @moon32960.ResponseFlag::Success => Some(@moon32960.ResponseFlag::Success)
-        @moon32960.ResponseFlag::OtherError => Some(@moon32960.ResponseFlag::OtherError)
+        @moon32960.ResponseFlag::Success =>
+          Some(@moon32960.ResponseFlag::Success)
+        @moon32960.ResponseFlag::OtherError =>
+          Some(@moon32960.ResponseFlag::OtherError)
         @moon32960.ResponseFlag::VinDuplicate =>
           Some(@moon32960.ResponseFlag::VinDuplicate)
         _ => None
@@ -86,7 +101,10 @@ test "登入应答 0x01 且数据单元只保留报文时间" {
   match handled.response {
     Some(response) => {
       assert_eq(response.payload.length(), 6)
-      assert_eq(response.payload[0:6].to_owned() == frame.payload[0:6].to_owned(), true)
+      assert_eq(
+        response.payload[0:6].to_owned() == frame.payload[0:6].to_owned(),
+        true,
+      )
     }
     None => fail("登入必须应答")
   }
@@ -118,7 +136,11 @@ test "车端实时上报校验正确不应答" {
 test "平台间实时上报必须应答 0x01" {
   let gateway = @moon32960.Gateway::new()
   let handled = gateway.handle(
-    report_frame("PLATFRM0000000001", command=@moon32960.Command::RealtimeReport, minute=31),
+    report_frame(
+      "PLATFRM0000000001",
+      command=@moon32960.Command::RealtimeReport,
+      minute=31,
+    ),
     scope=@moon32960.Scope::PlatformToPlatform,
   )
   assert_eq(handled.outcome.name(), "report-accepted")
@@ -161,7 +183,7 @@ test "AES 加密上报带密钥可解，无密钥只记录" {
   let key = @moon32960.KeyMaterial::Aes128Ecb(
     key=@moon32960.from_hex("000102030405060708090a0b0c0d0e0f"),
   )
-  let frame = try! @moon32960.Frame::new(
+  let frame = @moon32960.Frame::new(
     command=@moon32960.Command::RealtimeReport,
     response=@moon32960.Command,
     vin~,
@@ -182,7 +204,11 @@ test "AES 加密上报带密钥可解，无密钥只记录" {
 test "会话：未登入上报被丢弃" {
   let gateway = @moon32960.Gateway::new()
   let handled = gateway.handle(
-    report_frame("LGWEF4A56MF999999", command=@moon32960.Command::RealtimeReport, minute=31),
+    report_frame(
+      "LGWEF4A56MF999999",
+      command=@moon32960.Command::RealtimeReport,
+      minute=31,
+    ),
   )
   assert_eq(handled.outcome.name(), "rejected")
   assert_true(handled.response is None)

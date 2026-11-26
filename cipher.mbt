@@ -1,4 +1,5 @@
 // cipher.mbt
+
 ///|
 /// 数据单元加解密的密钥材料。
 ///
@@ -31,34 +32,26 @@ pub fn encrypt_payload(
 ) -> Bytes raise FrameError {
   match encryption {
     Plain => payload
-    Aes => {
+    Aes =>
       match key {
-        Aes128Ecb(key~) => {
-          aes128_ecb_encrypt(key, pkcs7_pad(payload))
-        }
-        Aes128Cbc(key~, iv~) => {
-          aes128_cbc_encrypt(key, iv, pkcs7_pad(payload))
-        }
-        NoKey => {
+        Aes128Ecb(key~) => aes128_ecb_encrypt(key, pkcs7_pad(payload))
+        Aes128Cbc(key~, iv~) => aes128_cbc_encrypt(key, iv, pkcs7_pad(payload))
+        NoKey =>
           raise CryptoUnavailable(
             mode="AES128",
             message="帧声明 AES128，但未提供密钥；不允许按明文处理",
           )
-        }
       }
-    }
-    Rsa => {
+    Rsa =>
       raise CryptoUnavailable(
         mode="RSA",
         message="RSA 私钥由部署方持有并注入，本项目不内置密钥管理；未注入时拒绝该帧",
       )
-    }
-    Abnormal | InvalidMode | Sm2 | Sm4 | Unknown(_) => {
+    Abnormal | InvalidMode | Sm2 | Sm4 | Unknown(_) =>
       raise CryptoUnavailable(
         mode=encryption.name(),
         message="加密方式字节非法，拒绝处理",
       )
-    }
   }
 }
 
@@ -71,7 +64,7 @@ pub fn decrypt_payload(
 ) -> Bytes raise FrameError {
   match encryption {
     Plain => payload
-    Aes => {
+    Aes =>
       match key {
         Aes128Ecb(key~) => {
           if payload.length() % 16 != 0 {
@@ -91,25 +84,21 @@ pub fn decrypt_payload(
           }
           pkcs7_unpad(aes128_cbc_decrypt(key, iv, payload))
         }
-        NoKey => {
+        NoKey =>
           raise CryptoUnavailable(
             mode="AES128",
             message="帧声明 AES128，但未提供密钥；拒绝解析而不是按明文处理",
           )
-        }
       }
-    }
-    Rsa => {
+    Rsa =>
       raise CryptoUnavailable(
         mode="RSA",
         message="RSA 解密需要部署方注入私钥实现；未注入时拒绝该帧",
       )
-    }
-    Abnormal | InvalidMode | Sm2 | Sm4 | Unknown(_) => {
+    Abnormal | InvalidMode | Sm2 | Sm4 | Unknown(_) =>
       raise CryptoUnavailable(
         mode=encryption.name(),
         message="加密方式字节非法，拒绝处理",
       )
-    }
   }
 }

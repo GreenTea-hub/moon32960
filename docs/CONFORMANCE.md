@@ -130,7 +130,7 @@
 
 ## 10. 验证
 
-- `moon test`：38 条，覆盖版本识别、应答标志、BCC、AES FIPS-197、表 6 登入（含非法包编码拒绝）、十一类信息体、表 31 密钥交换、表 B.3/B.4 激活、表 B.5/B.9/B.10 参数与控制、两套应答语义、加密与缺密钥；
+- `moon test`：44 条，覆盖版本识别、应答标志、BCC、AES FIPS-197、表 6 登入（含非法包编码拒绝）、十一类信息体、表 31 密钥交换、表 B.3/B.4 激活、表 B.5/B.9/B.10 参数与控制、两套应答语义、加密与缺密钥；
 - `moon run cmd/main -- case login|encrypted|report|resend|platform|keyexchange|activate`；
 - 黄金帧与应答帧为常量。
 

@@ -1,5 +1,5 @@
 import {
-  "GreenTea-hub/moon32960" @moon32960,
+  "GreenTea-hub/moon32960",
   "moonbitlang/core/env",
 }
 

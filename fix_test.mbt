@@ -1,7 +1,15 @@
 // fix_test.mbt
+
 ///|
 fn t26() -> @moon32960.Time {
-  try! @moon32960.Time::new(year=2026, month=11, day=26, hour=9, minute=30, second=0)
+  try! @moon32960.Time::new(
+    year=2026,
+    month=11,
+    day=26,
+    hour=9,
+    minute=30,
+    second=0,
+  )
 }
 
 ///|
@@ -95,13 +103,12 @@ test "登入时识别码必须是 VIN" {
     response: @moon32960.Command,
     vin: "CUSTOM-CODE-0001!",
     encryption: @moon32960.Encryption::Plain,
-    payload: try!
-      @moon32960.VehicleLogin::new(
-        time=t26(),
-        sequence=1,
-        iccid="89860620180001234567",
-        systems=[],
-      ).to_bytes(),
+    payload: try! @moon32960.VehicleLogin::new(
+      time=t26(),
+      sequence=1,
+      iccid="89860620180001234567",
+      systems=[],
+    ).to_bytes(),
   }
   // 表 B.1 车端识别码必须是 VIN，非法则拒绝并应答 0x02
   let handled = gateway.handle(frame)
@@ -112,13 +119,12 @@ test "登入时识别码必须是 VIN" {
 ///|
 test "登出流水号须与登入一致" {
   let session = try! @moon32960.TerminalSession::new("LGWEF4A56MF123456")
-  let login = try!
-    @moon32960.VehicleLogin::new(
-      time=t26(),
-      sequence=7,
-      iccid="89860620180001234567",
-      systems=[],
-    )
+  let login = try! @moon32960.VehicleLogin::new(
+    time=t26(),
+    sequence=7,
+    iccid="89860620180001234567",
+    systems=[],
+  )
   session.login(login)
   try session.logout(sequence=8) catch {
     _ => ()

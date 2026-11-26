@@ -253,13 +253,7 @@ pub fn InfoType::from_byte(byte : Byte) -> InfoType {
     0x32 => SuperCapacitorExtreme
     0x80 => Custom
     0xff => Signature
-    n => {
-      if n >= 0x80 && n <= 0xfe {
-        Custom
-      } else {
-        Unknown(n)
-      }
-    }
+    n => if n >= 0x80 && n <= 0xfe { Custom } else { Unknown(n) }
   }
 }
 

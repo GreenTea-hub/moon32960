@@ -30,8 +30,19 @@ fn command_of(name : String) -> @moon32960.Command raise {
 }
 
 ///|
-fn sample_time(hour~ : Int32 = 9, minute~ : Int32 = 30, second~ : Int32 = 0) -> @moon32960.Time {
-  try! @moon32960.Time::new(year=2026, month=11, day=25, hour~, minute~, second~)
+fn sample_time(
+  hour~ : Int32 = 9,
+  minute~ : Int32 = 30,
+  second~ : Int32 = 0,
+) -> @moon32960.Time {
+  try! @moon32960.Time::new(
+    year=2026,
+    month=11,
+    day=25,
+    hour~,
+    minute~,
+    second~,
+  )
 }
 
 ///|
@@ -41,24 +52,25 @@ fn section(title : String) -> Unit {
 }
 
 ///|
-fn fmt_scaled(raw : Int32, divisor~ : Int32 = 10, offset~ : Int32 = 0) -> String {
+fn fmt_scaled(
+  raw : Int32,
+  divisor~ : Int32 = 10,
+  offset~ : Int32 = 0,
+) -> String {
   let tenths = (raw - offset) * 10 / divisor
   let negative = tenths < 0
-  let magnitude = if negative {
-    -tenths
-  } else {
-    tenths
-  }
-  let sign = if negative {
-    "-"
-  } else {
-    ""
-  }
+  let magnitude = if negative { -tenths } else { tenths }
+  let sign = if negative { "-" } else { "" }
   "\{sign}\{magnitude / 10}.\{magnitude % 10}"
 }
 
 ///|
-fn field_text(raw : Int32, width~ : Int32, divisor~ : Int32 = 10, offset~ : Int32 = 0) -> String {
+fn field_text(
+  raw : Int32,
+  width~ : Int32,
+  divisor~ : Int32 = 10,
+  offset~ : Int32 = 0,
+) -> String {
   let abnormal = match width {
     1 => 0xfe
     2 => 0xfffe
@@ -107,20 +119,27 @@ fn fmt_flags(flags : Array[Int32]) -> String {
 fn describe_frame(frame : @moon32960.Frame) -> Unit {
   println("  协议版本    : \{frame.version.name()}")
   println("  命令单元    : \{frame.command.name()}")
-  println("  应答标志    : \{@moon32960.ResponseFlag::to_byte(frame.response).to_hex()} (\{frame.response.name()})")
+  println(
+    "  应答标志    : \{@moon32960.ResponseFlag::to_byte(frame.response).to_hex()} (\{frame.response.name()})",
+  )
   println("  VIN         : \{frame.vin}")
   println("  加密方式    : \{frame.encryption.name()}")
   println("  数据单元    : \{frame.payload.length()} 字节（已解密）")
 }
 
 ///|
-fn print_handled(handled : @moon32960.Handled, key~ : @moon32960.KeyMaterial = @moon32960.KeyMaterial::NoKey) -> Unit raise {
+fn print_handled(
+  handled : @moon32960.Handled,
+  key~ : @moon32960.KeyMaterial = @moon32960.KeyMaterial::NoKey,
+) -> Unit raise {
   println("  平台结论    : \{handled.outcome.name()}")
   println("  说明        : \{handled.note}")
   match handled.response {
     Some(response) => {
       println("  应答帧      : \{response.hex(key~)}")
-      println("  应答标志    : \{@moon32960.ResponseFlag::to_byte(response.response).to_hex()} (\{response.response.name()})")
+      println(
+        "  应答标志    : \{@moon32960.ResponseFlag::to_byte(response.response).to_hex()} (\{response.response.name()})",
+      )
       println("  应答数据单元: \{response.payload.length()} 字节")
     }
     None => println("  应答帧      : 无（本次处理不产生应答）")
@@ -136,37 +155,77 @@ fn describe_items(telemetry : @moon32960.Telemetry) -> Unit {
         println("      车辆状态   \{data.vehicle_status_name()}")
         println("      充电状态   \{data.charge_status_name()}")
         println("      SOC        \{data.soc}%")
-        println("      车速       \{field_text(data.speed_raw, width=2)} km/h")
-        println("      累计里程   \{field_text(data.odometer_raw, width=4)} km")
-        println("      总电压     \{field_text(data.total_voltage_raw, width=2)} V")
-        println("      总电流     \{field_text(data.total_current_raw, width=2, offset=30000)} A")
+        println(
+          "      车速       \{field_text(data.speed_raw, width=2)} km/h",
+        )
+        println(
+          "      累计里程   \{field_text(data.odometer_raw, width=4)} km",
+        )
+        println(
+          "      总电压     \{field_text(data.total_voltage_raw, width=2)} V",
+        )
+        println(
+          "      总电流     \{field_text(data.total_current_raw, width=2, offset=30000)} A",
+        )
       }
       @moon32960.ReportItem::Motors(data) => {
         println("  · 驱动电机 0x02，共 \{data.motors.length()} 个")
         for motor in data.motors {
-          println("      电机\{motor.sequence} \{motor.status_name()} 转速 \{motor.speed_rpm()} r/min 转矩 \{motor.torque_nm()} N·m")
+          let rpm = match motor.speed_rpm() {
+            Some(value) => "\{value}"
+            None => "无效"
+          }
+          let torque = match motor.torque_nm() {
+            Some(value) => fmt_scaled((value * 10.0).to_int(), divisor=10)
+            None => "无效"
+          }
+          println(
+            "      电机\{motor.sequence} \{motor.status_name()} 转速 \{rpm} r/min 转矩 \{torque} N·m",
+          )
         }
       }
-      @moon32960.ReportItem::FuelCell(_) => println("  · 燃料电池发动机及车载氢系统 0x03")
-      @moon32960.ReportItem::Engine(data) => println("  · 发动机 0x04，曲轴转速 \{data.crankshaft_speed_raw} r/min")
+      @moon32960.ReportItem::FuelCell(_) =>
+        println("  · 燃料电池发动机及车载氢系统 0x03")
+      @moon32960.ReportItem::Engine(data) =>
+        println(
+          "  · 发动机 0x04，曲轴转速 \{data.crankshaft_speed_raw} r/min",
+        )
       @moon32960.ReportItem::Location(data) => {
         println("  · 车辆位置 0x05")
-        println("      定位有效   \{data.is_fix_valid()}，坐标系 \{data.coordinate_system_name()}")
-        println("      经度       \{fmt_geo(data.longitude_raw)}，纬度 \{fmt_geo(data.latitude_raw)}")
+        println(
+          "      定位有效   \{data.is_fix_valid()}，坐标系 \{data.coordinate_system_name()}",
+        )
+        println(
+          "      经度       \{fmt_geo(data.longitude_raw)}，纬度 \{fmt_geo(data.latitude_raw)}",
+        )
       }
-      @moon32960.ReportItem::Alarm(data) => {
-        println("  · 报警数据 0x06，等级 \{(match data.level() { Some(l) => l.to_string(); None => "无效" })}, 置位 \{fmt_flags(data.active_flags())}")
-      }
-      @moon32960.ReportItem::BatteryCellVoltage(data) => println("  · 蓄电池最小并联单元电压 0x07，\{data.packs.length()} 个包")
-      @moon32960.ReportItem::BatteryTemperature(data) => println("  · 蓄电池温度 0x08，\{data.packs.length()} 个包")
-      @moon32960.ReportItem::FuelCellStack(data) => println("  · 燃料电池电堆 0x30，\{data.stacks.length()} 个")
-      @moon32960.ReportItem::SuperCapacitor(data) => println("  · 超级电容器 0x31，单体 \{data.cell_voltages_raw.length()} 个")
-      @moon32960.ReportItem::SuperCapacitorExtreme(_) => println("  · 超级电容器极值 0x32")
-      @moon32960.ReportItem::Custom(data) => println("  · 自定义数据，\{data.length()} 字节")
+      @moon32960.ReportItem::Alarm(data) =>
+        println(
+          "  · 报警数据 0x06，等级 \{(match data.level() { Some(l) => l.to_string(); None => "无效" })}, 置位 \{fmt_flags(data.active_flags())}",
+        )
+      @moon32960.ReportItem::BatteryCellVoltage(data) =>
+        println(
+          "  · 蓄电池最小并联单元电压 0x07，\{data.packs.length()} 个包",
+        )
+      @moon32960.ReportItem::BatteryTemperature(data) =>
+        println("  · 蓄电池温度 0x08，\{data.packs.length()} 个包")
+      @moon32960.ReportItem::FuelCellStack(data) =>
+        println("  · 燃料电池电堆 0x30，\{data.stacks.length()} 个")
+      @moon32960.ReportItem::SuperCapacitor(data) =>
+        println(
+          "  · 超级电容器 0x31，单体 \{data.cell_voltages_raw.length()} 个",
+        )
+      @moon32960.ReportItem::SuperCapacitorExtreme(_) =>
+        println("  · 超级电容器极值 0x32")
+      @moon32960.ReportItem::Custom(data) =>
+        println("  · 自定义数据，\{data.length()} 字节")
     }
   }
   match telemetry.signature {
-    Some(sig) => println("  · 签名：类型 \{sig.kind_raw}，R \{sig.r.length()} 字节，S \{sig.s.length()} 字节（只解析不验签）")
+    Some(sig) =>
+      println(
+        "  · 签名：类型 \{sig.kind_raw}，R \{sig.r.length()} 字节，S \{sig.s.length()} 字节（只解析不验签）",
+      )
     None => ()
   }
 }
@@ -198,11 +257,15 @@ fn decode_uplink(frame : @moon32960.Frame) -> Unit raise {
     @moon32960.Command::VehicleLogout => {
       let logout = @moon32960.VehicleLogout::decode(frame.payload[:])
       section("车辆登出（表 28）")
-      println("  登出时间    : \{logout.time.to_display()}，流水号 \{logout.sequence}")
+      println(
+        "  登出时间    : \{logout.time.to_display()}，流水号 \{logout.sequence}",
+      )
     }
     @moon32960.Command::Heartbeat => {
       section("心跳（附录 B）")
-      println("  数据单元    : \{frame.payload.length()} 字节（标准为空）")
+      println(
+        "  数据单元    : \{frame.payload.length()} 字节（标准为空）",
+      )
     }
     _ => {
       section("数据单元")
@@ -254,15 +317,17 @@ fn sample_telemetry(time~ : @moon32960.Time) -> @moon32960.Telemetry {
     longitude_raw: 116397000,
     latitude_raw: 39909000,
   }
-  @moon32960.Telemetry::new(
-    time~,
-    items=[@moon32960.ReportItem::Vehicle(vehicle), @moon32960.ReportItem::Location(location)],
-  )
+  @moon32960.Telemetry::new(time~, items=[
+    @moon32960.ReportItem::Vehicle(vehicle),
+    @moon32960.ReportItem::Location(location),
+  ])
 }
 
 ///|
 fn demo_key() -> @moon32960.KeyMaterial raise {
-  @moon32960.KeyMaterial::Aes128Ecb(key=@moon32960.from_hex("000102030405060708090a0b0c0d0e0f"))
+  @moon32960.KeyMaterial::Aes128Ecb(
+    key=@moon32960.from_hex("000102030405060708090a0b0c0d0e0f"),
+  )
 }
 
 ///|
@@ -343,7 +408,10 @@ fn case_resend() -> Unit raise {
     println("  补发 09:\{minute} : \{gateway.handle(frame).outcome.name()}")
   }
   match gateway.session(vin) {
-    Some(session) => println("  补发帧计 \{session.resend_count}，实时帧计 \{session.report_count}")
+    Some(session) =>
+      println(
+        "  补发帧计 \{session.resend_count}，实时帧计 \{session.report_count}",
+      )
     None => println("  会话不存在")
   }
 }
@@ -371,7 +439,12 @@ fn case_platform() -> Unit raise {
   let _ = gateway.handle(login_frame("LGWEF4A56MF123456"))
   print_handled(gateway.handle(terminal))
   section("② 平台间（正文 5.2.2：正确也必须应答）")
-  print_handled(@moon32960.Gateway::new().handle(platform_side, scope=@moon32960.Scope::PlatformToPlatform))
+  print_handled(
+    @moon32960.Gateway::new().handle(
+      platform_side,
+      scope=@moon32960.Scope::PlatformToPlatform,
+    ),
+  )
   section("③ 终端校时 0x08（上行）")
   let time_sync = @moon32960.Frame::new(
     command=@moon32960.Command::TerminalTimeSync,
@@ -409,14 +482,22 @@ fn case_keyexchange() -> Unit raise {
     payload=real.to_bytes(),
   )
   println("  ① 终端发出命令包：\{frame.hex()}")
-  println("     密钥类型 0x0\{real.key_type}（\{real.key_type_name()}），密钥 \{real.key.length()} 字节")
-  println("     启用 \{real.enable_from.to_display()}，失效 \{real.expire_at.to_display()}")
+  println(
+    "     密钥类型 0x0\{real.key_type}（\{real.key_type_name()}），密钥 \{real.key.length()} 字节",
+  )
+  println(
+    "     启用 \{real.enable_from.to_display()}，失效 \{real.expire_at.to_display()}",
+  )
   let gateway = @moon32960.Gateway::new()
   section("② 平台应答")
   print_handled(gateway.handle(frame))
   section("③ 外部配套责任")
-  println("  · 本项目负责：解析表 31 结构、校验类型与有效期、应答 0x01")
-  println("  · 部署方负责：把密钥装进密钥管理系统，按启用/失效时间切换")
+  println(
+    "  · 本项目负责：解析表 31 结构、校验类型与有效期、应答 0x01",
+  )
+  println(
+    "  · 部署方负责：把密钥装进密钥管理系统，按启用/失效时间切换",
+  )
   println("  · 本项目不持有密钥内容，不以明文落库")
 }
 
@@ -442,10 +523,14 @@ fn case_activate() -> Unit raise {
     payload=activation.to_bytes(),
   )
   println("  ① 终端命令包：\{frame.hex()}")
-  println("     芯片 ID \{activation.chip_id}，公钥 \{activation.public_key.length()} 字节")
+  println(
+    "     芯片 ID \{activation.chip_id}，公钥 \{activation.public_key.length()} 字节",
+  )
   section("② 平台应答（命令 0x0A，数据单元表 B.4）")
   print_handled(@moon32960.Gateway::new().handle(frame))
-  println("  · 激活应答不是普通 0x01/0x02，而是 0x0A 命令 + 激活状态 + 信息")
+  println(
+    "  · 激活应答不是普通 0x01/0x02，而是 0x0A 命令 + 激活状态 + 信息",
+  )
 }
 
 ///|
@@ -461,9 +546,12 @@ fn parse_key(text : String) -> @moon32960.KeyMaterial raise {
 fn main raise {
   let args = @env.args()
   match args[1:] {
-    ["decode", hex] => decode_uplink(@moon32960.decode_frame(@moon32960.from_hex(hex)))
+    ["decode", hex] =>
+      decode_uplink(@moon32960.decode_frame(@moon32960.from_hex(hex)))
     ["decode", hex, "--aes", key] =>
-      decode_uplink(@moon32960.decode_frame(@moon32960.from_hex(hex), key=parse_key(key)))
+      decode_uplink(
+        @moon32960.decode_frame(@moon32960.from_hex(hex), key=parse_key(key)),
+      )
     ["encode", vin, command_name, payload_hex] => {
       let frame = @moon32960.Frame::new(
         command=command_of(command_name),

@@ -62,19 +62,23 @@ pub fn build_response(
   answer_time~ : Time? = None,
 ) -> Frame raise FrameError {
   let payload = match shape {
-    TimeOnly => match answer_time {
-      Some(time) => time.to_bytes()
-      None =>
-        if request.payload.length() >= 6 {
-          request.payload[0:6].to_owned()
-        } else {
-          raise Payload(message="应答需要报文时间，但请求数据单元不足 6 字节")
-        }
-    }
-    KeepRequestPayload => match answer_time {
-      Some(time) => replace_time(request.payload, time)
-      None => request.payload
-    }
+    TimeOnly =>
+      match answer_time {
+        Some(time) => time.to_bytes()
+        None =>
+          if request.payload.length() >= 6 {
+            request.payload[0:6].to_owned()
+          } else {
+            raise Payload(
+              message="应答需要报文时间，但请求数据单元不足 6 字节",
+            )
+          }
+      }
+    KeepRequestPayload =>
+      match answer_time {
+        Some(time) => replace_time(request.payload, time)
+        None => request.payload
+      }
     EmptyPayload => Bytes::new(0)
   }
   {
@@ -108,7 +112,14 @@ pub fn response_frame(request : Frame, flag : ResponseFlag) -> Frame {
 ///|
 /// 标记为命令包：主动发起方必须置 0xFE。
 pub fn command_frame(frame : Frame) -> Frame {
-  { version: frame.version, command: frame.command, response: Command, vin: frame.vin, encryption: frame.encryption, payload: frame.payload }
+  {
+    version: frame.version,
+    command: frame.command,
+    response: Command,
+    vin: frame.vin,
+    encryption: frame.encryption,
+    payload: frame.payload,
+  }
 }
 
 ///|
@@ -123,8 +134,14 @@ pub fn is_response_packet(frame : Frame) -> Bool {
 /// 车端上行命令（附录 B 表 B.2）：登入、实时、补发、登出、心跳、校时、激活、密钥交换。
 pub fn Command::is_terminal_uplink(self : Command) -> Bool {
   match self {
-    VehicleLogin | RealtimeReport | ResendReport | VehicleLogout | Heartbeat |
-    TerminalTimeSync | Activate | KeyExchange => true
+    VehicleLogin
+    | RealtimeReport
+    | ResendReport
+    | VehicleLogout
+    | Heartbeat
+    | TerminalTimeSync
+    | Activate
+    | KeyExchange => true
     _ => false
   }
 }
@@ -142,8 +159,13 @@ pub fn Command::is_downlink(self : Command) -> Bool {
 /// 平台间上行命令（正文表 3）：登入、实时、补发、登出、平台登入/登出、密钥交换。
 pub fn Command::is_platform_uplink(self : Command) -> Bool {
   match self {
-    VehicleLogin | RealtimeReport | ResendReport | VehicleLogout | PlatformLogin |
-    PlatformLogout | KeyExchange => true
+    VehicleLogin
+    | RealtimeReport
+    | ResendReport
+    | VehicleLogout
+    | PlatformLogin
+    | PlatformLogout
+    | KeyExchange => true
     _ => false
   }
 }

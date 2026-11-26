@@ -17,7 +17,9 @@ pub(all) struct VehicleLocation {
 pub const LOCATION_LEN : Int32 = 10
 
 ///|
-pub fn VehicleLocation::decode(bytes : BytesView) -> VehicleLocation raise FrameError {
+pub fn VehicleLocation::decode(
+  bytes : BytesView,
+) -> VehicleLocation raise FrameError {
   expect_len(bytes.length(), LOCATION_LEN, what="车辆位置数据")
   {
     position_status: bytes[0].to_int(),
@@ -46,18 +48,20 @@ pub fn VehicleLocation::is_fix_valid(self : VehicleLocation) -> Bool {
 ///|
 /// 第 1 位：0 北纬，1 南纬。
 pub fn VehicleLocation::is_south(self : VehicleLocation) -> Bool {
-  (self.position_status / 2) % 2 == 1
+  self.position_status / 2 % 2 == 1
 }
 
 ///|
 /// 第 2 位：0 东经，1 西经。
 pub fn VehicleLocation::is_west(self : VehicleLocation) -> Bool {
-  (self.position_status / 4) % 2 == 1
+  self.position_status / 4 % 2 == 1
 }
 
 ///|
 /// 坐标系名称：0x01 WGS84、0x02 GCJ02、0x03 其他。
-pub fn VehicleLocation::coordinate_system_name(self : VehicleLocation) -> String {
+pub fn VehicleLocation::coordinate_system_name(
+  self : VehicleLocation,
+) -> String {
   match self.coordinate_system {
     0x01 => "WGS84"
     0x02 => "GCJ02"

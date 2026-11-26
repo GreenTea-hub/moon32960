@@ -29,8 +29,16 @@ jobs:
           irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
           "$env:USERPROFILE\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      - name: moon check
-        run: moon check --target wasm
+      - name: toolchain version
+        run: moon version --all
+
+      - name: moon check (deny warnings)
+        run: moon check --target wasm --deny-warn
 
       - name: moon test
-        run: moon test --target wasm
+        run: moon test --target wasm --deny-warn
+
+      - name: moon fmt check
+        run: |
+          moon fmt
+          git diff --exit-code

@@ -1,11 +1,4 @@
 // gateway.mbt
-///|
-/// 应答标志取值口径。GB/T 32960.3-2016 表 4 只给出 0x01 成功、0x02 失败、0xFE 命令；
-/// 0x03 VIN 重复、0xFF 无效来自地方标准与 2025 版，默认不启用。
-pub(all) enum ResponseProfile {
-  Gb2016
-  Extended
-}
 
 ///|
 /// 平台对一跳上行帧的处理结论。
@@ -77,7 +70,7 @@ pub(all) struct Gateway {
 
 ///|
 pub fn Gateway::new() -> Gateway {
-  { sessions: Map([]), accepted: 0, rejected: 0, audit: [] }
+  { sessions: Map([]), accepted: 0, rejected: 0, audit: [], }
 }
 
 ///|
@@ -89,18 +82,12 @@ fn audit_and_pack(
   response : Frame?,
   note~ : String,
 ) -> Handled {
-  g.audit.push({
-    vin,
-    command: command.name(),
-    outcome: outcome.name(),
-    note,
-  })
+  g.audit.push({ vin, command: command.name(), outcome: outcome.name(), note, })
   match outcome {
-    Rejected | ConflictingDirection | Undecodable =>
-      g.rejected = g.rejected + 1
+    Rejected | ConflictingDirection | Undecodable => g.rejected = g.rejected + 1
     _ => g.accepted = g.accepted + 1
   }
-  { outcome, response, note }
+  { outcome, response, note, }
 }
 
 ///|
@@ -127,7 +114,6 @@ pub fn Gateway::handle(
   scope~ : Scope = TerminalToPlatform,
   shape? : ResponseShape,
   answer_time~ : Time? = None,
-  profile~ : ResponseProfile = Gb2016,
 ) -> Handled {
   // 应答形态按场景取默认：附录 B（车端）要求其余报文内容与请求一致；
   // 平台间的地方口径是保留报文时间、删除其余内容。正文未规定平台间应答包格式。
@@ -174,7 +160,7 @@ pub fn Gateway::handle(
     )
   }
   match scope {
-    TerminalToPlatform => self.handle_terminal(frame, shape~, answer_time~, profile~)
+    TerminalToPlatform => self.handle_terminal(frame, shape~, answer_time~)
     PlatformToPlatform => self.handle_platform(frame, shape~, answer_time~)
   }
 }
@@ -186,13 +172,11 @@ fn Gateway::handle_terminal(
   frame : Frame,
   shape~ : ResponseShape,
   answer_time~ : Time?,
-  profile~ : ResponseProfile,
 ) -> Handled {
   match frame.command {
     VehicleLogin => {
-
       let login = VehicleLogin::decode(frame.payload[:]) catch {
-        _ => {
+        _ =>
           // 附录 B.1：校验错误时忽略所接收数据，不应答。
           return audit_and_pack(
             self,
@@ -202,10 +186,9 @@ fn Gateway::handle_terminal(
             None,
             note="登入校验未通过，按附录 B.1 忽略且不应答",
           )
-        }
       }
       match self.sessions.get(frame.vin) {
-        Some(session) => {
+        Some(session) =>
           if session.is_online() {
             let flag : ResponseFlag = VinDuplicate
             let response = answer(frame, flag, shape~, answer_time~)
@@ -230,10 +213,9 @@ fn Gateway::handle_terminal(
               note="会话曾关闭，重登成功，应答 0x01",
             )
           }
-        }
         None => {
           let session = TerminalSession::new(frame.vin) catch {
-            _ => {
+            _ =>
               return audit_and_pack(
                 self,
                 frame.vin,
@@ -242,7 +224,6 @@ fn Gateway::handle_terminal(
                 None,
                 note="VIN 不合法，按附录 B.1 忽略且不应答",
               )
-            }
           }
           session.login(login)
           self.sessions.set(frame.vin, session)
@@ -280,7 +261,7 @@ fn Gateway::handle_terminal(
         Some(session) => {
           // 7 日窗口是发送方的存储义务，平台不因此拒收；需要严格审计时由调用方开启。
           session.report(at=telemetry.time, resend~) catch {
-            _ => {
+            _ =>
               return audit_and_pack(
                 self,
                 frame.vin,
@@ -289,13 +270,8 @@ fn Gateway::handle_terminal(
                 None,
                 note="会话状态异常（未在线），丢弃",
               )
-            }
           }
-          let outcome = if resend {
-            ResendAccepted
-          } else {
-            ReportAccepted
-          }
+          let outcome = if resend { ResendAccepted } else { ReportAccepted }
           audit_and_pack(
             self,
             frame.vin,
@@ -305,7 +281,7 @@ fn Gateway::handle_terminal(
             note="校验正确，按附录 B.2.1 车端不做应答",
           )
         }
-        None => {
+        None =>
           audit_and_pack(
             self,
             frame.vin,
@@ -314,7 +290,6 @@ fn Gateway::handle_terminal(
             None,
             note="未见该 VIN 有效登入，丢弃且不应答",
           )
-        }
       }
     }
     Activate => {
@@ -322,7 +297,11 @@ fn Gateway::handle_terminal(
       // 标准 B.3.5.5/B.3.5.6 规定应答用 0x0A 命令 + 表 B.4 数据单元，不是普通 0x01/0x02。
       let info = Activate::decode(frame.payload[:]) catch {
         _ => {
-          let response = activate_ack_frame(frame, ActivateFail, ActivateInfo::Unknown(0))
+          let response = activate_ack_frame(
+            frame,
+            ActivateFail,
+            ActivateInfo::Unknown(0),
+          )
           return audit_and_pack(
             self,
             frame.vin,
@@ -335,9 +314,17 @@ fn Gateway::handle_terminal(
       }
       let duplicate = self.sessions.contains(info.vin)
       let (state, ack_info, note) = if duplicate {
-        (ActivateFail, ActivateInfo::VinDuplicate, "VIN 已存在，激活应答 0x02 VIN 重复")
+        (
+          ActivateFail,
+          ActivateInfo::VinDuplicate,
+          "VIN 已存在，激活应答 0x02 VIN 重复",
+        )
       } else {
-        (ActivateOk, ActivateInfo::ActivateSucceeded, "激活通过，已登记芯片 ID 与公钥")
+        (
+          ActivateOk,
+          ActivateInfo::ActivateSucceeded,
+          "激活通过，已登记芯片 ID 与公钥",
+        )
       }
       let _ = info
       let response = activate_ack_frame(frame, state, ack_info)
@@ -393,11 +380,11 @@ fn Gateway::handle_terminal(
         note="终端校时请求，数据单元为空，应答 0x01",
       )
     }
-    Heartbeat => {
+    Heartbeat =>
       match self.sessions.get(frame.vin) {
         Some(session) => {
           session.heartbeat() catch {
-            _ => {
+            _ =>
               return audit_and_pack(
                 self,
                 frame.vin,
@@ -406,7 +393,6 @@ fn Gateway::handle_terminal(
                 None,
                 note="心跳时会话不在线，丢弃",
               )
-            }
           }
           let response = answer(frame, Success, shape~, answer_time~)
           audit_and_pack(
@@ -418,7 +404,7 @@ fn Gateway::handle_terminal(
             note="心跳应答 0x01（附录 B 未强制，按平台惯例应答）",
           )
         }
-        None => {
+        None =>
           audit_and_pack(
             self,
             frame.vin,
@@ -427,9 +413,7 @@ fn Gateway::handle_terminal(
             None,
             note="未知 VIN 心跳，丢弃且不应答",
           )
-        }
       }
-    }
     VehicleLogout => {
       let logout = VehicleLogout::decode(frame.payload[:]) catch {
         _ => {
@@ -595,7 +579,7 @@ pub fn Gateway::handle_bytes(
   key~ : KeyMaterial = NoKey,
 ) -> Handled {
   let header = peek_header(data) catch {
-    _ => {
+    _ =>
       return audit_and_pack(
         self,
         "",
@@ -604,7 +588,6 @@ pub fn Gateway::handle_bytes(
         None,
         note="报头不可解析，无法确定 VIN 与命令，不应答",
       )
-    }
   }
   let frame = decode_frame(data, key~) catch {
     _ => {

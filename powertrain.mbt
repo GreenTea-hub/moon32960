@@ -98,14 +98,16 @@ pub fn DriveMotorData::decode_at(
   }
   let need = 1 + count * DRIVE_MOTOR_LEN
   if offset + need > end {
-    raise Payload(message="驱动电机数据: 声明 \{count} 个需要 \{need} 字节，实际不足")
+    raise Payload(
+      message="驱动电机数据: 声明 \{count} 个需要 \{need} 字节，实际不足",
+    )
   }
   let motors : Array[DriveMotor] = []
   for i in 0..<count {
     let start = offset + 1 + i * DRIVE_MOTOR_LEN
     motors.push(DriveMotor::decode(bytes[start:start + DRIVE_MOTOR_LEN]))
   }
-  ({ count_raw, motors }, need)
+  ({ count_raw, motors, }, need)
 }
 
 ///|
@@ -143,8 +145,14 @@ pub(all) struct FuelCellHydrogen {
 pub const FUEL_CELL_HYDROGEN_LEN : Int32 = 12
 
 ///|
-pub fn FuelCellHydrogen::decode(bytes : BytesView) -> FuelCellHydrogen raise FrameError {
-  expect_len(bytes.length(), FUEL_CELL_HYDROGEN_LEN, what="燃料电池发动机及车载氢系统")
+pub fn FuelCellHydrogen::decode(
+  bytes : BytesView,
+) -> FuelCellHydrogen raise FrameError {
+  expect_len(
+    bytes.length(),
+    FUEL_CELL_HYDROGEN_LEN,
+    what="燃料电池发动机及车载氢系统",
+  )
   {
     max_hydrogen_temp_raw: u16_be(bytes, 0),
     max_hydrogen_temp_probe: bytes[2].to_int(),
@@ -185,7 +193,7 @@ pub const ENGINE_LEN : Int32 = 2
 ///|
 pub fn Engine::decode(bytes : BytesView) -> Engine raise FrameError {
   expect_len(bytes.length(), ENGINE_LEN, what="发动机数据")
-  { crankshaft_speed_raw: u16_be(bytes, 0) }
+  { crankshaft_speed_raw: u16_be(bytes, 0), }
 }
 
 ///|

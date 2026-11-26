@@ -63,7 +63,7 @@ pub fn Frame::new(
   payload~ : Bytes,
   version~ : FrameVersion = V2025,
 ) -> Frame {
-  { version, command, response, vin, encryption, payload }
+  { version, command, response, vin, encryption, payload, }
 }
 
 ///|
@@ -79,7 +79,7 @@ pub fn peek_header(data : Bytes) -> FrameHeader raise FrameError {
   let declared = u16_be(data, 22)
   let actual = data.length() - HEADER_LEN - 1
   if declared != actual {
-    raise BadLength(expected=declared, actual=actual)
+    raise BadLength(expected=declared, actual~)
   }
   {
     version,
@@ -137,8 +137,12 @@ pub fn decode_frame(
   match expect_version {
     Some(expected) =>
       match (expected, header.version) {
-        (V2025, V2016) => raise Payload(message="起始符为 ##，这是 2016 年版协议的帧")
-        (V2016, V2025) => raise Payload(message="起始符为 $$，这是 2025 版协议的帧")
+        (V2025, V2016) =>
+          raise Payload(
+            message="起始符为 ##，这是 2016 年版协议的帧",
+          )
+        (V2016, V2025) =>
+          raise Payload(message="起始符为 $$，这是 2025 版协议的帧")
         _ => ()
       }
     None => ()
@@ -162,6 +166,9 @@ pub fn decode_frame(
 }
 
 ///|
-pub fn Frame::hex(self : Frame, key~ : KeyMaterial = NoKey) -> String raise FrameError {
+pub fn Frame::hex(
+  self : Frame,
+  key~ : KeyMaterial = NoKey,
+) -> String raise FrameError {
   to_hex(encode_frame(self, key~))
 }

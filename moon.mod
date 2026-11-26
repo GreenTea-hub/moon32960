@@ -8,8 +8,15 @@ repository = "https://github.com/GreenTea-hub/moon32960"
 
 license = "Apache-2.0"
 
-keywords = ["gb32960", "vehicle", "protocol", "codec", "telematics", "china-standard"]
+keywords = [
+  "gb32960",
+  "vehicle",
+  "protocol",
+  "codec",
+  "telematics",
+  "china-standard",
+]
 
 preferred_target = "wasm"
 
-description = "GB/T 32960 vehicle telematics protocol: frame codec, session state machine, platform gateway and conformance fixtures."
+description = "GB/T 32960.3-2025 vehicle telematics protocol for MoonBit: frame codec, eleven info types, AES, activation and key exchange, terminal/platform response rules."

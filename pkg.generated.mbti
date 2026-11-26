@@ -370,7 +370,7 @@ pub(all) struct Gateway {
   mut rejected : Int32
   audit : Array[AuditEntry]
 }
-pub fn Gateway::handle(Self, Frame, scope? : Scope, shape? : ResponseShape, answer_time? : Time?, profile? : ResponseProfile) -> Handled
+pub fn Gateway::handle(Self, Frame, scope? : Scope, shape? : ResponseShape, answer_time? : Time?) -> Handled
 pub fn Gateway::handle_bytes(Self, Bytes, scope? : Scope, shape? : ResponseShape, answer_time? : Time?, key? : KeyMaterial) -> Handled
 pub fn Gateway::new() -> Self
 pub fn Gateway::online_count(Self) -> Int32
@@ -479,11 +479,6 @@ pub fn ResponseFlag::from_byte(Byte) -> Self
 pub fn ResponseFlag::name(Self) -> String
 pub fn ResponseFlag::to_byte(Self) -> Byte
 
-pub(all) enum ResponseProfile {
-  Gb2016
-  Extended
-}
-
 pub(all) enum ResponseShape {
   TimeOnly
   KeepRequestPayload
@@ -566,7 +561,7 @@ pub fn Telemetry::decode(BytesView) -> Self raise FrameError
 pub fn Telemetry::find(Self, InfoType) -> ReportItem?
 pub fn Telemetry::has(Self, InfoType) -> Bool
 pub fn Telemetry::new(time~ : Time, items~ : Array[ReportItem]) -> Self
-pub fn Telemetry::to_bytes(Self) -> Bytes raise FrameError
+pub fn Telemetry::to_bytes(Self) -> Bytes
 pub fn Telemetry::with_signature(Self, signature~ : Signature) -> Self
 
 pub(all) struct TerminalControl {

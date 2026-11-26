@@ -27,12 +27,16 @@ pub fn KeyExchange::decode(bytes : BytesView) -> KeyExchange raise FrameError {
   let key_at = 3
   ensure_at(bytes, key_at, key_len + 12, what="密钥与有效期")
   let key = bytes[key_at:key_at + key_len].to_owned()
-  let enable_from = Time::from_bytes(bytes[key_at + key_len:key_at + key_len + 6])
-  let expire_at = Time::from_bytes(bytes[key_at + key_len + 6:key_at + key_len + 12])
+  let enable_from = Time::from_bytes(
+    bytes[key_at + key_len:key_at + key_len + 6],
+  )
+  let expire_at = Time::from_bytes(
+    bytes[key_at + key_len + 6:key_at + key_len + 12],
+  )
   if bytes.length() != key_at + key_len + 12 {
     raise BadLength(expected=key_at + key_len + 12, actual=bytes.length())
   }
-  { key_type, key, enable_from, expire_at }
+  { key_type, key, enable_from, expire_at, }
 }
 
 ///|
@@ -91,18 +95,24 @@ pub fn Activate::decode(bytes : BytesView) -> Activate raise FrameError {
   ensure_at(bytes, 24, pk_len + 17, what="公钥与 VIN")
   let public_key = bytes[24:24 + pk_len].to_owned()
   let vin = decode_vin(bytes[24 + pk_len:24 + pk_len + 17])
-  let (signature, used) = Signature::decode_at(bytes, 24 + pk_len + 17, bytes.length())
+  let (signature, used) = Signature::decode_at(
+    bytes,
+    24 + pk_len + 17,
+    bytes.length(),
+  )
   if 24 + pk_len + 17 + used != bytes.length() {
     raise BadLength(expected=24 + pk_len + 17 + used, actual=bytes.length())
   }
-  { time, chip_id, public_key, vin, signature }
+  { time, chip_id, public_key, vin, signature, }
 }
 
 ///|
 pub fn Activate::to_bytes(self : Activate) -> Bytes raise FrameError {
   let chip = @utf8.encode(self.chip_id)
   if chip.length() != 16 {
-    raise Payload(message="芯片 ID 应为 16 字符，实际 \{chip.length()}")
+    raise Payload(
+      message="芯片 ID 应为 16 字符，实际 \{chip.length()}",
+    )
   }
   let out : Array[Byte] = []
   for byte in self.time.to_bytes() {
@@ -251,7 +261,7 @@ pub fn ParamQuery::decode(bytes : BytesView) -> ParamQuery raise FrameError {
   for i in 0..<count {
     ids.push(bytes[7 + i].to_int())
   }
-  { time, ids }
+  { time, ids, }
 }
 
 ///|
@@ -294,10 +304,12 @@ pub fn ParamSetting::decode(bytes : BytesView) -> ParamSetting raise FrameError 
       let len = bytes[cursor].to_int()
       cursor = cursor + 1 + len
       ensure_at(bytes, cursor - len, len, what="域名")
-      items.push({ id, value: bytes[cursor - len:cursor].to_owned() })
+      items.push({ id, value: bytes[cursor - len:cursor].to_owned(), })
     } else if id == 0x05 {
       // 域名内容，长度由 0x04 给出；这里保守取到下一个已知边界
-      raise Payload(message="参数 0x05 依赖 0x04 的域名长度，需成对解析，暂不支持单独出现")
+      raise Payload(
+        message="参数 0x05 依赖 0x04 的域名长度，需成对解析，暂不支持单独出现",
+      )
     } else {
       let len = param_len(id)
       let width = match len {
@@ -308,14 +320,14 @@ pub fn ParamSetting::decode(bytes : BytesView) -> ParamSetting raise FrameError 
         raise Payload(message="未知参数 ID 0x\{id}")
       }
       ensure_at(bytes, cursor, width, what="参数值")
-      items.push({ id, value: bytes[cursor:cursor + width].to_owned() })
+      items.push({ id, value: bytes[cursor:cursor + width].to_owned(), })
       cursor = cursor + width
     }
   }
   if cursor != bytes.length() {
     raise BadLength(expected=cursor, actual=bytes.length())
   }
-  { time, items }
+  { time, items, }
 }
 
 ///|
@@ -343,7 +355,9 @@ pub(all) struct TerminalControl {
 }
 
 ///|
-pub fn TerminalControl::decode(bytes : BytesView) -> TerminalControl raise FrameError {
+pub fn TerminalControl::decode(
+  bytes : BytesView,
+) -> TerminalControl raise FrameError {
   ensure_at(bytes, 0, 7, what="车载终端控制")
   {
     time: Time::from_bytes(bytes[0:6]),
@@ -394,6 +408,6 @@ pub fn activate_ack_frame(
     response: Success,
     vin: request.vin,
     encryption: request.encryption,
-    payload: { state, info }.to_bytes(),
+    payload: { state, info, }.to_bytes(),
   }
 }

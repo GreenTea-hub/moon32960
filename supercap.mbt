@@ -42,7 +42,12 @@ pub fn SuperCapacitor::decode_at(
   let probe_count_raw = u16_be(bytes, cursor)
   let n = match FieldState::word(probe_count_raw) {
     Valid => {
-      check_count(probe_count_raw, 1, 65531, field="超级电容温度探针总数")
+      check_count(
+        probe_count_raw,
+        1,
+        65531,
+        field="超级电容温度探针总数",
+      )
       probe_count_raw
     }
     _ => 0
@@ -109,7 +114,11 @@ pub const SUPERCAP_EXTREME_LEN : Int32 = 18
 pub fn SuperCapacitorExtreme::decode(
   bytes : BytesView,
 ) -> SuperCapacitorExtreme raise FrameError {
-  expect_len(bytes.length(), SUPERCAP_EXTREME_LEN, what="超级电容器极值数据")
+  expect_len(
+    bytes.length(),
+    SUPERCAP_EXTREME_LEN,
+    what="超级电容器极值数据",
+  )
   {
     max_voltage_system: bytes[0].to_int(),
     max_voltage_cell: u16_be(bytes, 1),

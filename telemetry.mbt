@@ -29,7 +29,7 @@ pub fn Signature::decode_at(
     raise Payload(message="签名 S 值长度 \{s_len} 超出剩余字节")
   }
   let s = bytes[s_len_at + 2:s_len_at + 2 + s_len].to_owned()
-  ({ kind_raw: bytes[offset].to_int(), r, s }, 3 + r_len + 2 + s_len)
+  ({ kind_raw: bytes[offset].to_int(), r, s, }, 3 + r_len + 2 + s_len)
 }
 
 ///|
@@ -79,16 +79,26 @@ pub fn decode_item(
   let (item, used) = match kind {
     InfoType::WholeVehicle => {
       ensure_at(bytes, start, WHOLE_VEHICLE_LEN, what="整车数据")
-      (Vehicle(WholeVehicle::decode(bytes[start:start + WHOLE_VEHICLE_LEN])), WHOLE_VEHICLE_LEN)
+      (
+        Vehicle(WholeVehicle::decode(bytes[start:start + WHOLE_VEHICLE_LEN])),
+        WHOLE_VEHICLE_LEN,
+      )
     }
     InfoType::DriveMotor => {
       let (data, n) = DriveMotorData::decode_at(bytes, start, end)
       (Motors(data), n)
     }
     InfoType::FuelCellHydrogen => {
-      ensure_at(bytes, start, FUEL_CELL_HYDROGEN_LEN, what="燃料电池发动机及车载氢系统")
+      ensure_at(
+        bytes,
+        start,
+        FUEL_CELL_HYDROGEN_LEN,
+        what="燃料电池发动机及车载氢系统",
+      )
       (
-        FuelCell(FuelCellHydrogen::decode(bytes[start:start + FUEL_CELL_HYDROGEN_LEN])),
+        FuelCell(
+          FuelCellHydrogen::decode(bytes[start:start + FUEL_CELL_HYDROGEN_LEN]),
+        ),
         FUEL_CELL_HYDROGEN_LEN,
       )
     }
@@ -98,7 +108,10 @@ pub fn decode_item(
     }
     InfoType::Location => {
       ensure_at(bytes, start, LOCATION_LEN, what="车辆位置数据")
-      (Location(VehicleLocation::decode(bytes[start:start + LOCATION_LEN])), LOCATION_LEN)
+      (
+        Location(VehicleLocation::decode(bytes[start:start + LOCATION_LEN])),
+        LOCATION_LEN,
+      )
     }
     InfoType::Alarm => {
       let (data, n) = Alarm::decode_at(bytes, start, end)
@@ -121,10 +134,17 @@ pub fn decode_item(
       (SuperCapacitor(data), n)
     }
     InfoType::SuperCapacitorExtreme => {
-      ensure_at(bytes, start, SUPERCAP_EXTREME_LEN, what="超级电容器极值数据")
+      ensure_at(
+        bytes,
+        start,
+        SUPERCAP_EXTREME_LEN,
+        what="超级电容器极值数据",
+      )
       (
         SuperCapacitorExtreme(
-          SuperCapacitorExtreme::decode(bytes[start:start + SUPERCAP_EXTREME_LEN]),
+          SuperCapacitorExtreme::decode(
+            bytes[start:start + SUPERCAP_EXTREME_LEN],
+          ),
         ),
         SUPERCAP_EXTREME_LEN,
       )
@@ -133,16 +153,17 @@ pub fn decode_item(
       ensure_at(bytes, start, 2, what="自定义数据长度")
       let len = u16_be(bytes, start)
       if len < 1 || start + 2 + len > end {
-        raise Payload(message="自定义数据长度 \{len} 不合法或超出剩余字节")
+        raise Payload(
+          message="自定义数据长度 \{len} 不合法或超出剩余字节",
+        )
       }
       (Custom(bytes[start + 2:start + 2 + len].to_owned()), 2 + len)
     }
-    InfoType::Signature => {
-      raise Payload(message="签名数据开始标识不应作为信息类型出现在此位置")
-    }
-    InfoType::Unknown(code) => {
-      raise UnsupportedInfoType(code~)
-    }
+    InfoType::Signature =>
+      raise Payload(
+        message="签名数据开始标识不应作为信息类型出现在此位置",
+      )
+    InfoType::Unknown(code) => raise UnsupportedInfoType(code~)
   }
   (item, 1 + used)
 }
@@ -188,16 +209,19 @@ pub(all) struct Telemetry {
 
 ///|
 pub fn Telemetry::new(time~ : Time, items~ : Array[ReportItem]) -> Telemetry {
-  { time, items, signature: None }
+  { time, items, signature: None, }
 }
 
 ///|
-pub fn Telemetry::with_signature(self : Telemetry, signature~ : Signature) -> Telemetry {
-  { time: self.time, items: self.items, signature: Some(signature) }
+pub fn Telemetry::with_signature(
+  self : Telemetry,
+  signature~ : Signature,
+) -> Telemetry {
+  { time: self.time, items: self.items, signature: Some(signature), }
 }
 
 ///|
-pub fn Telemetry::to_bytes(self : Telemetry) -> Bytes raise FrameError {
+pub fn Telemetry::to_bytes(self : Telemetry) -> Bytes {
   let out : Array[Byte] = []
   for byte in self.time.to_bytes() {
     out.push(byte)
@@ -240,7 +264,9 @@ pub fn Telemetry::decode(bytes : BytesView) -> Telemetry raise FrameError {
       signature = Some(sig)
       offset = offset + 1 + used
       if offset != end {
-        raise Payload(message="签名信息后仍有 \{end - offset} 字节未解析")
+        raise Payload(
+          message="签名信息后仍有 \{end - offset} 字节未解析",
+        )
       }
     } else {
       let (item, used) = decode_item(bytes, offset, end)
@@ -248,7 +274,7 @@ pub fn Telemetry::decode(bytes : BytesView) -> Telemetry raise FrameError {
       offset = offset + used
     }
   }
-  { time, items, signature }
+  { time, items, signature, }
 }
 
 ///|

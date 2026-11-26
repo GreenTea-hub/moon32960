@@ -1,4 +1,5 @@
 // crypto_test.mbt
+
 ///|
 /// FIPS-197 附录 C.1 的 AES-128 测试向量。
 const FIPS_KEY : String = "000102030405060708090a0b0c0d0e0f"
@@ -12,7 +13,10 @@ const FIPS_CIPHER : String = "69c4e0d86a7b0430d8cdb78070b4c55a"
 ///|
 test "AES-128 单分组加密匹配 FIPS-197" {
   let keys = @moon32960.aes128_expand_key(@moon32960.from_hex(FIPS_KEY))
-  let encrypted = @moon32960.aes128_encrypt_block(@moon32960.from_hex(FIPS_PLAIN)[:], keys)
+  let encrypted = @moon32960.aes128_encrypt_block(
+    @moon32960.from_hex(FIPS_PLAIN)[:],
+    keys,
+  )
   assert_eq(@moon32960.to_hex(encrypted), FIPS_CIPHER)
 }
 

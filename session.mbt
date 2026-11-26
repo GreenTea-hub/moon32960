@@ -1,4 +1,5 @@
 // session.mbt
+
 ///|
 /// 会话状态：终端登入后在线，登出或断开后关闭。
 pub(all) enum SessionState {
@@ -47,7 +48,10 @@ pub fn TerminalSession::new(vin : String) -> TerminalSession raise FrameError {
 
 ///|
 /// 记录登入信息。字段已在 `VehicleLogin` 解码阶段校验，这里只做状态切换。
-pub fn TerminalSession::login(self : TerminalSession, login : VehicleLogin) -> Unit {
+pub fn TerminalSession::login(
+  self : TerminalSession,
+  login : VehicleLogin,
+) -> Unit {
   self.state = SessionState::Online
   self.sequence = login.sequence
   self.iccid = login.iccid
@@ -97,13 +101,16 @@ pub fn TerminalSession::report(
 ///|
 /// 以天为单位的粗略秒数，仅用于补发窗口的量级判断（不含闰年与跨月修正）。
 fn second_of_day(time : Time) -> Int32 {
-  let day = ((time.year - 2000) * 365 + (time.month - 1) * 30 + time.day) * 86400
+  let day = ((time.year - 2000) * 365 + (time.month - 1) * 30 + time.day) *
+    86400
   let clock = time.hour * 3600 + time.minute * 60 + time.second
   day + clock
 }
 
 ///|
-pub fn TerminalSession::heartbeat(self : TerminalSession) -> Unit raise FrameError {
+pub fn TerminalSession::heartbeat(
+  self : TerminalSession,
+) -> Unit raise FrameError {
   match self.state {
     Online => ()
     _ => raise Payload(message="未登入即心跳：vin=\{self.vin}")

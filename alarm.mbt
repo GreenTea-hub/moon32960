@@ -38,7 +38,9 @@ fn read_list(
   }
   let need = 1 + count * width
   if offset + need > end {
-    raise Payload(message="\{what}: 声明 \{count} 条需要 \{need} 字节，实际不足")
+    raise Payload(
+      message="\{what}: 声明 \{count} 条需要 \{need} 字节，实际不足",
+    )
   }
   let items : Array[Int32] = []
   for i in 0..<count {
@@ -72,15 +74,45 @@ pub fn Alarm::decode_at(
 ) -> (Alarm, Int32) raise FrameError {
   ensure_at(bytes, offset, 5, what="报警数据")
   let mut cursor = offset + 5
-  let (storage_faults, used1) = read_list(bytes, cursor, end, 4, what="可充电储能装置故障列表")
+  let (storage_faults, used1) = read_list(
+    bytes,
+    cursor,
+    end,
+    4,
+    what="可充电储能装置故障列表",
+  )
   cursor = cursor + used1
-  let (motor_faults, used2) = read_list(bytes, cursor, end, 4, what="驱动电机故障列表")
+  let (motor_faults, used2) = read_list(
+    bytes,
+    cursor,
+    end,
+    4,
+    what="驱动电机故障列表",
+  )
   cursor = cursor + used2
-  let (engine_faults, used3) = read_list(bytes, cursor, end, 4, what="发动机故障列表")
+  let (engine_faults, used3) = read_list(
+    bytes,
+    cursor,
+    end,
+    4,
+    what="发动机故障列表",
+  )
   cursor = cursor + used3
-  let (other_faults, used4) = read_list(bytes, cursor, end, 4, what="其他故障列表")
+  let (other_faults, used4) = read_list(
+    bytes,
+    cursor,
+    end,
+    4,
+    what="其他故障列表",
+  )
   cursor = cursor + used4
-  let (general_faults, used5) = read_list(bytes, cursor, end, 2, what="通用报警故障列表")
+  let (general_faults, used5) = read_list(
+    bytes,
+    cursor,
+    end,
+    2,
+    what="通用报警故障列表",
+  )
   cursor = cursor + used5
   (
     {
@@ -120,7 +152,7 @@ pub fn Alarm::level(self : Alarm) -> Int32? {
 
 ///|
 pub fn Alarm::has_flag(self : Alarm, bit : Int32) -> Bool {
-  ((self.general_flags_raw / pow2(bit)) % 2) == 1
+  self.general_flags_raw / pow2(bit) % 2 == 1
 }
 
 ///|
